@@ -1,17 +1,19 @@
-# WBC Pipeline — G1 29-DOF Locomotion Training
+# WBC Pipeline — G1 Locomotion Training
 
 > [!NOTE]
 > This project was developed with assistance from AI tools.
 
-RL training pipeline for the Unitree G1 humanoid robot (29-DOF, no fingers) using Isaac Lab v2.3.2 + RSL-RL PPO. Trains walking policies and exports them as ONNX models with observation normalization baked in, ready for real-time inference on the physical robot.
+RL training pipeline for the Unitree G1 humanoid robot using Isaac Lab v2.3.2 + RSL-RL PPO. Trains walking policies and exports them as ONNX models with observation normalization baked in, ready for real-time inference on the physical robot.
+
+Currently targets the 29-DOF body-only variant (no fingers). The architecture supports variable DOF configurations via the `JointPreset` system — adding support for the full 37-DOF G1 (locomotion + manipulation) or reduced-DOF subsets (legs-only for faster iteration) means defining a new preset, not rewriting env configs.
 
 ## Why This Exists
 
-Isaac Lab ships G1 environments for the 37-DOF variant (body + fingers). The downstream inference stack expects 29-DOF policies with a specific joint ordering, default positions, and 103-dim observation vector. This pipeline bridges that gap — custom 29-DOF environments that produce ONNX models matching the inference contract exactly.
+Isaac Lab ships G1 environments for the 37-DOF variant (body + fingers). The downstream inference stack expects 29-DOF policies with a specific joint ordering, default positions, and observation vector. This pipeline bridges that gap — custom environments that produce ONNX models matching the inference contract exactly.
 
 ## Environments
 
-Four registered gymnasium environments, all sharing the same 29-joint action space:
+Four registered gymnasium environments, all sharing the same action space:
 
 | Task ID | Obs Dim | Terrain | Sensors | Preset |
 |---------|---------|---------|---------|--------|
@@ -20,21 +22,21 @@ Four registered gymnasium environments, all sharing the same 29-joint action spa
 | `WBC-Velocity-Warehouse-G1-29DOF-v0` | 466 | USD warehouse scene | Contact + lidar (121 rays x 3) | Operator |
 | `WBC-Velocity-IsaacLab-Flat-G1-29DOF-v0` | 103 | Flat plane | Contact | Isaac Lab stock |
 
-**Observations** (103-dim base): linear velocity (3) + angular velocity (3) + projected gravity (3) + velocity commands (3) + joint positions (29) + joint velocities (29) + last actions (29) + phase oscillator (4). Rough and warehouse envs append sensor data.
+**Observations** (base vector for N joints): linear velocity (3) + angular velocity (3) + projected gravity (3) + velocity commands (3) + joint positions (N) + joint velocities (N) + last actions (N) + phase oscillator (4). With the current 29-DOF preset, that's 103 dims. Rough and warehouse envs append sensor data.
 
-**Joint presets** (`joint_presets.py`) define the joint ordering, default positions, action scale, and phase oscillator settings. The "operator" preset matches the inference stack. The "Isaac Lab stock" preset uses upstream defaults (shallower knee bend, `action_scale=0.5`, no phase oscillator). Adding a new preset (e.g., for SONIC/BONES) means adding a `JointPreset` dataclass instance — no config classes need to change.
+**Joint presets** (`joint_presets.py`) define the joint ordering, default positions, action scale, and phase oscillator settings. The "operator" preset matches the inference stack's 29-DOF convention. The "Isaac Lab stock" preset uses upstream defaults (shallower knee bend, `action_scale=0.5`, no phase oscillator). Adding a new preset means adding a `JointPreset` dataclass instance — no config classes need to change.
 
 ## ONNX Contract
 
 Exported policies must satisfy:
 
 - Input: `"obs"` tensor, shape `[1, obs_dim]`, float32
-- Output: `"actions"` tensor, shape `[1, 29]`, float32
+- Output: `"actions"` tensor, shape `[1, N_joints]`, float32
 - Observation normalization baked into the ONNX graph (not applied at inference time)
-- Joint ordering matches `OPERATOR_PRESET.joint_order`
+- Joint ordering matches the active preset's `joint_order`
 - Action = position offset scaled by `action_scale` (0.25 for operator, 0.5 for Isaac Lab stock)
 
-The `export_onnx.py` script derives dimensions from the live environment and validates the exported model against `EXPECTED_OBS_DIM` / `EXPECTED_ACTION_DIM` declared on each env config.
+The `export_onnx.py` script derives dimensions from the live environment and validates the exported model against `EXPECTED_OBS_DIM` / `EXPECTED_ACTION_DIM` declared on each env config. This catches dim mismatches before training hours are wasted.
 
 ## Container
 
@@ -84,12 +86,21 @@ All GPU jobs have `pipeline.wbc/phase` and `pipeline.wbc/component` pod labels f
 
 ## Key Design Decisions
 
+- **`JointPreset` dataclass as the extension point** for DOF flexibility. Joint count, ordering, default positions, action scale, and phase oscillator are all derived from the preset. The 29-DOF assumption lives in the preset definition, not in the architecture. A future phase will externalize presets to YAML files so operators can define new configurations without touching Python.
 - **Separate env config files per variant** rather than a single parameterized class. Matches Isaac Lab's own pattern (`G1FlatEnvCfg` vs `G1RoughEnvCfg`) and avoids fighting `@configclass` (attrs-based) inheritance semantics.
-- **`JointPreset` dataclass** as single source of truth for joint ordering, defaults, action scale, and phase oscillator. Adding a preset doesn't require touching any config class.
 - **`GridPatternCfg` for warehouse lidar** instead of `LidarPatternCfg`. Isaac Lab v2.3.2 doesn't expose angular lidar natively. The grid pattern produces a spatial sweep (meters), not angular (degrees). Documented in the scene config.
 - **Phase oscillator** as a 4-dim gait clock `[cos(L), cos(R), sin(L), sin(R)]` with configurable frequency and offset. Returns zeros when disabled (`freq_hz=0`), preserving observation shape.
-- **`EXPECTED_OBS_DIM` / `EXPECTED_ACTION_DIM`** class constants on each env config, validated at ONNX export time. Catches dim mismatches before training hours are wasted.
+- **`EXPECTED_OBS_DIM` / `EXPECTED_ACTION_DIM`** class constants on each env config, validated at ONNX export time.
 - **Multi-stage Containerfile** so source code changes rebuild in seconds instead of rebuilding the full Isaac Lab stack.
+
+## Roadmap
+
+The pipeline is built in phases. Phases 0-3b are complete. Key upcoming work:
+
+- **Phase 3c — YAML config & DOF flexibility**: Externalize presets to YAML files, support variable joint counts (37-DOF full G1, reduced-DOF subsets), ConfigMap-based preset injection in containers.
+- **Phase 4 — KFP pipeline**: Define training as a KFP v2 pipeline on RHOAI DSPA (validate → train → export → validate-onnx → register).
+- **Phase 5 — Deployment manifests**: DSPA CR, Kueue integration, kustomize overlays.
+- **Phase 6 — B200 scale testing**: Performance benchmarks at 8k+ envs on B200 GPUs.
 
 ## Development
 
@@ -100,4 +111,4 @@ ruff format src/ tests/     # format
 pytest tests/ -v            # 93 tests (no GPU needed)
 ```
 
-Tests validate joint presets, observation contracts, ONNX structure, phase oscillator behavior, and env registration. Tests that require Isaac Lab runtime are auto-skipped outside the container.
+Pre-commit hooks run ruff lint, ruff format, and pytest on every commit. Tests validate joint presets, observation contracts, ONNX structure, phase oscillator behavior, and env registration. Tests that require Isaac Lab runtime are auto-skipped outside the container.
