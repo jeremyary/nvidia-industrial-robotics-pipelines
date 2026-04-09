@@ -13,41 +13,21 @@ NAMESPACE ?= wbc-training
 #   make job-logs JOB=overnight
 #   make job-clean JOB=overnight
 
-JOB_FILE_smoke-test           = deploy/smoke-test-job.yaml
-JOB_NAME_smoke-test           = isaaclab-smoke-test
+JOB_FILE_smoke-test           = deploy/jobs/smoke-test.yaml
+JOB_NAME_smoke-test           = smoke-test
 JOB_NEEDS_INFRA_smoke-test    = false
 
-JOB_FILE_convergence          = deploy/convergence-test-job.yaml
-JOB_NAME_convergence          = convergence-test
-JOB_NEEDS_INFRA_convergence   = false
+JOB_FILE_rough-terrain        = deploy/jobs/rough-terrain-test.yaml
+JOB_NAME_rough-terrain        = rough-terrain-test
+JOB_NEEDS_INFRA_rough-terrain = false
 
-JOB_FILE_phase1               = deploy/phase1-validation-job.yaml
-JOB_NAME_phase1               = phase1-validation
-JOB_NEEDS_INFRA_phase1        = true
+JOB_FILE_isaaclab-preset      = deploy/jobs/isaaclab-preset-test.yaml
+JOB_NAME_isaaclab-preset      = isaaclab-preset-test
+JOB_NEEDS_INFRA_isaaclab-preset = false
 
-JOB_FILE_phase2               = deploy/phase2-validation-job.yaml
-JOB_NAME_phase2               = phase2-validation
-JOB_NEEDS_INFRA_phase2        = true
-
-JOB_FILE_phase3               = deploy/phase3-validation-job.yaml
-JOB_NAME_phase3               = phase3-validation
-JOB_NEEDS_INFRA_phase3        = false
-
-JOB_FILE_phase3b-flat         = deploy/phase3b-validation-jobs.yaml
-JOB_NAME_phase3b-flat         = phase3b-flat-regression
-JOB_NEEDS_INFRA_phase3b-flat  = false
-
-JOB_FILE_phase3b-rough        = deploy/phase3b-validation-jobs.yaml
-JOB_NAME_phase3b-rough        = phase3b-rough-validation
-JOB_NEEDS_INFRA_phase3b-rough = false
-
-JOB_FILE_phase3b-isaaclab     = deploy/phase3b-validation-jobs.yaml
-JOB_NAME_phase3b-isaaclab     = phase3b-isaaclab-preset
-JOB_NEEDS_INFRA_phase3b-isaaclab = false
-
-JOB_FILE_overnight            = deploy/overnight-training-job.yaml
-JOB_NAME_overnight            = overnight-extended
-JOB_NEEDS_INFRA_overnight     = true
+JOB_FILE_training-flat-6k     = deploy/jobs/training-flat-6k.yaml
+JOB_NAME_training-flat-6k     = training-flat-6k
+JOB_NEEDS_INFRA_training-flat-6k = true
 
 # Resolve JOB variable to file/name/infra-flag
 _JOB_FILE       = $(JOB_FILE_$(JOB))
@@ -78,25 +58,25 @@ smoke-test:
 
 # ── OCP infrastructure ──────────────────────────────────────────────
 deploy-namespace:
-	oc apply -f deploy/namespace.yaml
+	oc apply -f deploy/infra/namespace.yaml
 	oc project $(NAMESPACE)
 
 deploy-infra: deploy-namespace
-	oc apply -f deploy/gpu-scc.yaml
-	oc apply -f deploy/minio.yaml
-	oc apply -f deploy/mlflow.yaml
-	oc apply -f deploy/mlflow-rbac.yaml
+	oc apply -f deploy/infra/gpu-scc.yaml
+	oc apply -f deploy/infra/minio.yaml
+	oc apply -f deploy/infra/mlflow.yaml
+	oc apply -f deploy/infra/mlflow-rbac.yaml
 	oc delete job minio-init -n $(NAMESPACE) --ignore-not-found
-	oc apply -f deploy/minio-init-job.yaml
+	oc apply -f deploy/infra/minio-init.yaml
 	oc wait --for=condition=complete job/minio-init -n $(NAMESPACE) --timeout=120s
 
 # ── Parametric job management ────────────────────────────────────────
 #
 # Usage:
-#   make job-deploy JOB=overnight    # deploy infra (if needed) + create job
-#   make job-logs JOB=overnight      # tail logs
-#   make job-clean JOB=overnight     # delete job
-#   make job-list                    # show available JOB names
+#   make job-deploy JOB=training-flat-6k    # deploy infra (if needed) + create job
+#   make job-logs JOB=training-flat-6k      # tail logs
+#   make job-clean JOB=training-flat-6k     # delete job
+#   make job-list                           # show available JOB names
 
 job-deploy:
 ifndef JOB
@@ -109,7 +89,7 @@ ifeq ($(_JOB_NEEDS_INFRA),true)
 	@$(MAKE) --no-print-directory deploy-infra
 else
 	@$(MAKE) --no-print-directory deploy-namespace
-	oc apply -f deploy/gpu-scc.yaml
+	oc apply -f deploy/infra/gpu-scc.yaml
 endif
 	oc delete job $(_JOB_NAME) -n $(NAMESPACE) --ignore-not-found
 	oc apply -f $(_JOB_FILE)
@@ -135,14 +115,9 @@ endif
 job-list:
 	@echo "Available jobs (use with JOB=<name>):"
 	@echo "  smoke-test        - 10 iters, 64 envs (no S3/MLflow)"
-	@echo "  convergence       - 500 iters, 1024 envs (no S3/MLflow)"
-	@echo "  phase1            - 100 iters + ONNX export"
-	@echo "  phase2            - 20 iters + S3/MLflow validation"
-	@echo "  phase3            - 50 iters + ONNX compat checks"
-	@echo "  phase3b-flat      - flat env regression (10 iters)"
-	@echo "  phase3b-rough     - rough terrain validation (10 iters)"
-	@echo "  phase3b-isaaclab  - Isaac Lab preset validation (10 iters)"
-	@echo "  overnight         - 6000 iters, 4096 envs + ONNX + S3"
+	@echo "  rough-terrain     - rough terrain validation (10 iters)"
+	@echo "  isaaclab-preset   - Isaac Lab preset validation (10 iters)"
+	@echo "  training-flat-6k  - 6000 iters, 4096 envs + ONNX + S3"
 
 # ── Development ──────────────────────────────────────────────────────
 lint:

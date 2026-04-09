@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: overnight-extended
+  name: training-flat-6k
   namespace: wbc-training
 spec:
   activeDeadlineSeconds: 28800
@@ -10,7 +10,7 @@ spec:
   template:
     metadata:
       labels:
-        app: overnight-extended
+        app: training-flat-6k
         pipeline.wbc/phase: training
         pipeline.wbc/component: training
     spec:
@@ -109,7 +109,7 @@ spec:
 
               echo ""
               echo "End time: $(date -u)"
-              echo "=== Overnight Training: COMPLETE ==="
+              echo "=== Training Flat 6K: COMPLETE ==="
           env:
             - name: ACCEPT_EULA
               value: "Y"

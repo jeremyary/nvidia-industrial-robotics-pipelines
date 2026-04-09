@@ -76,13 +76,19 @@ python -m wbc_pipeline.export_onnx \
 
 Kubernetes manifests in `deploy/` for OpenShift + RHOAI:
 
-- `namespace.yaml` — creates `wbc-training` namespace
-- `gpu-scc.yaml` — ServiceAccount + anyuid ClusterRoleBinding
-- `minio.yaml` + `minio-init-job.yaml` — S3-compatible storage for checkpoints
-- `mlflow.yaml` + `mlflow-rbac.yaml` — MLflow experiment tracking RBAC
-- `smoke-test-job.yaml` through `overnight-training-job.yaml` — GPU jobs with `activeDeadlineSeconds` timeouts
+- `infra/namespace.yaml` — creates `wbc-training` namespace
+- `infra/gpu-scc.yaml` — ServiceAccount + anyuid ClusterRoleBinding
+- `infra/minio.yaml` + `infra/minio-init.yaml` — S3-compatible storage for checkpoints
+- `infra/mlflow.yaml` + `infra/mlflow-rbac.yaml` — MLflow experiment tracking RBAC
+- `jobs/smoke-test.yaml` through `jobs/training-flat-6k.yaml` — GPU jobs with `activeDeadlineSeconds` timeouts
 
 All GPU jobs have `pipeline.wbc/phase` and `pipeline.wbc/component` pod labels for log aggregation.
+
+```
+deploy/
+  infra/          # cluster infrastructure (namespace, SCC, MinIO, MLflow)
+  jobs/           # GPU training and validation jobs
+```
 
 ## Key Design Decisions
 
