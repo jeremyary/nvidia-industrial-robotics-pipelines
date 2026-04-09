@@ -55,7 +55,7 @@ _JOB_NAME       = $(JOB_NAME_$(JOB))
 _JOB_NEEDS_INFRA = $(JOB_NEEDS_INFRA_$(JOB))
 
 .PHONY: build push ngc-login smoke-test \
-        deploy-namespace deploy-minio deploy-infra \
+        deploy-namespace deploy-infra \
         job-deploy job-logs job-clean job-list \
         lint test
 
@@ -80,12 +80,6 @@ smoke-test:
 deploy-namespace:
 	oc apply -f deploy/namespace.yaml
 	oc project $(NAMESPACE)
-
-deploy-minio: deploy-namespace
-	oc apply -f deploy/minio.yaml
-	oc delete job minio-init -n $(NAMESPACE) --ignore-not-found
-	oc apply -f deploy/minio-init-job.yaml
-	oc wait --for=condition=complete job/minio-init -n $(NAMESPACE) --timeout=120s
 
 deploy-infra: deploy-namespace
 	oc apply -f deploy/gpu-scc.yaml
