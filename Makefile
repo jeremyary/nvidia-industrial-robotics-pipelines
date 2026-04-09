@@ -29,6 +29,18 @@ JOB_FILE_training-flat-6k     = deploy/jobs/training-flat-6k.yaml
 JOB_NAME_training-flat-6k     = training-flat-6k
 JOB_NEEDS_INFRA_training-flat-6k = true
 
+JOB_FILE_training-rough-6k   = deploy/jobs/training-rough-6k.yaml
+JOB_NAME_training-rough-6k   = training-rough-6k
+JOB_NEEDS_INFRA_training-rough-6k = true
+
+JOB_FILE_training-warehouse-6k = deploy/jobs/training-warehouse-6k.yaml
+JOB_NAME_training-warehouse-6k = training-warehouse-6k
+JOB_NEEDS_INFRA_training-warehouse-6k = true
+
+JOB_FILE_training-isaaclab-6k = deploy/jobs/training-isaaclab-6k.yaml
+JOB_NAME_training-isaaclab-6k = training-isaaclab-6k
+JOB_NEEDS_INFRA_training-isaaclab-6k = true
+
 # Resolve JOB variable to file/name/infra-flag
 _JOB_FILE       = $(JOB_FILE_$(JOB))
 _JOB_NAME       = $(JOB_NAME_$(JOB))
@@ -117,7 +129,10 @@ job-list:
 	@echo "  smoke-test        - 10 iters, 64 envs (no S3/MLflow)"
 	@echo "  rough-terrain     - rough terrain validation (10 iters)"
 	@echo "  isaaclab-preset   - Isaac Lab preset validation (10 iters)"
-	@echo "  training-flat-6k  - 6000 iters, 4096 envs + ONNX + S3"
+	@echo "  training-flat-6k       - flat terrain, 6000 iters, 4096 envs"
+	@echo "  training-rough-6k      - rough terrain, 6000 iters, 4096 envs"
+	@echo "  training-warehouse-6k  - warehouse scene, 6000 iters, 4096 envs"
+	@echo "  training-isaaclab-6k   - Isaac Lab preset, 6000 iters, 4096 envs"
 
 # ── Development ──────────────────────────────────────────────────────
 lint:
