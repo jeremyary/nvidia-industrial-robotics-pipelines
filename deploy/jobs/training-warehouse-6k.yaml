@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: overnight-extended
+  name: training-warehouse-6k
   namespace: wbc-training
 spec:
   activeDeadlineSeconds: 28800
@@ -10,7 +10,7 @@ spec:
   template:
     metadata:
       labels:
-        app: overnight-extended
+        app: training-warehouse-6k
         pipeline.wbc/phase: training
         pipeline.wbc/component: training
     spec:
@@ -34,13 +34,12 @@ spec:
               ONNX_DIR="/tmp/onnx_export"
               mkdir -p "${ONNX_DIR}"
 
-              echo "=== Extended Training: 4096 envs x 6000 iters ==="
+              echo "=== Training Warehouse: 4096 envs x 6000 iters ==="
               echo "Start time: $(date -u)"
 
-              # Single Isaac Sim session: train, then export ONNX
               /workspace/isaaclab/isaaclab.sh -p -c "
               import sys, os
-              sys.argv = ['train', '--task', 'WBC-Velocity-Flat-G1-29DOF-v0', '--headless',
+              sys.argv = ['train', '--task', 'WBC-Velocity-Warehouse-G1-29DOF-v0', '--headless',
                           '--num_envs', '4096', '--max_iterations', '6000']
 
               from isaaclab.app import AppLauncher
@@ -83,7 +82,6 @@ spec:
                                 device=agent_cfg.device, training_cfg=training_cfg)
               runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
 
-              # Export ONNX
               print()
               print('=== Exporting ONNX policy ===')
               policy = runner.alg.policy
@@ -96,7 +94,6 @@ spec:
               out_dims = [d.dim_value for d in model.graph.output[0].type.tensor_type.shape.dim]
               print(f'ONNX exported: input {in_dims}, output {out_dims}')
 
-              # Also upload ONNX to S3
               if runner._s3_client is not None:
                   s3_cfg = training_cfg.s3
                   runner._s3_client.upload_file('${ONNX_DIR}/policy.onnx',
@@ -109,7 +106,7 @@ spec:
 
               echo ""
               echo "End time: $(date -u)"
-              echo "=== Overnight Training: COMPLETE ==="
+              echo "=== Training Warehouse 6K: COMPLETE ==="
           env:
             - name: ACCEPT_EULA
               value: "Y"
@@ -120,7 +117,7 @@ spec:
             - name: S3_BUCKET
               value: "wbc-training"
             - name: S3_PREFIX
-              value: "checkpoints-6k"
+              value: "checkpoints-warehouse-6k"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: isaaclab-smoke-test
+  name: smoke-test
   namespace: wbc-training
 spec:
   activeDeadlineSeconds: 1800
@@ -10,7 +10,7 @@ spec:
   template:
     metadata:
       labels:
-        app: isaaclab-smoke-test
+        app: smoke-test
         pipeline.wbc/phase: smoke
         pipeline.wbc/component: training
     spec:
