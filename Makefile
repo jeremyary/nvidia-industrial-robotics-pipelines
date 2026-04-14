@@ -57,6 +57,7 @@ _JOB_NEEDS_INFRA = $(JOB_NEEDS_INFRA_$(JOB))
 .PHONY: build push ngc-login local-smoke-test \
         deploy-infra \
         job-deploy job-logs job-clean job-list \
+        pipeline-compile pipeline-deploy \
         lint test
 
 # ── Container ────────────────────────────────────────────────────────
@@ -87,6 +88,11 @@ deploy-infra:
 	oc delete job minio-init -n $(NAMESPACE) --ignore-not-found
 	oc apply -f deploy/infra/minio-init.yaml
 	oc wait --for=condition=complete job/minio-init -n $(NAMESPACE) --timeout=120s
+	oc apply -f deploy/infra/dspa.yaml
+	@echo "Waiting for DSPA to be ready..."
+	oc wait --for=condition=Ready dspa/dspa -n $(NAMESPACE) --timeout=300s
+	oc apply -f deploy/infra/dspa-rbac.yaml
+	@echo "DSPA deployed. Verify runner SA: oc get sa -n $(NAMESPACE) | grep dspa"
 
 # ── Parametric job management ────────────────────────────────────────
 #
@@ -146,6 +152,17 @@ job-list:
 	@echo "    training-rough-6k    - rough terrain"
 	@echo "    training-warehouse-6k - warehouse scene"
 	@echo "    training-preset-6k   - Isaac Lab stock preset"
+
+# ── Pipeline ────────────────────────────────────────────────────────
+pipeline-compile:
+	python -m wbc_pipeline.pipeline
+
+pipeline-deploy:
+	oc apply -f deploy/infra/dspa.yaml
+	@echo "Waiting for DSPA to be ready..."
+	oc wait --for=condition=Ready dspa/dspa -n $(NAMESPACE) --timeout=300s
+	oc apply -f deploy/infra/dspa-rbac.yaml
+	@echo "DSPA deployed. Access pipeline UI via RHOAI dashboard."
 
 # ── Development ──────────────────────────────────────────────────────
 lint:

@@ -1,0 +1,25 @@
+# This project was developed with assistance from AI tools.
+apiVersion: datasciencepipelinesapplications.opendatahub.io/v1
+kind: DataSciencePipelinesApplication
+metadata:
+  name: dspa
+  namespace: wbc-training
+spec:
+  dspVersion: v2
+  apiServer:
+    cacheEnabled: false
+  database:
+    mariaDB:
+      deploy: true
+      pvcSize: 10Gi
+  objectStorage:
+    externalStorage:
+      bucket: wbc-training
+      host: minio.wbc-training.svc.cluster.local
+      port: "9000"
+      scheme: http
+      basePath: "pipeline-artifacts"
+      s3CredentialsSecret:
+        secretName: minio-credentials
+        accessKey: MINIO_ROOT_USER
+        secretKey: MINIO_ROOT_PASSWORD

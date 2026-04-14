@@ -103,13 +103,16 @@ class WBCRunner(OnPolicyRunner):
         super()._prepare_logging_writer()
         if self._training_cfg.mlflow.enabled:
             mlflow_cfg = self._training_cfg.mlflow
-            self.writer = _MlflowTensorboardWriter(
-                self.writer,
-                experiment_name=mlflow_cfg.experiment_name,
-                tracking_uri=mlflow_cfg.tracking_uri,
-                insecure_tls=mlflow_cfg.insecure_tls,
-            )
-            print(f"[WBCRunner] MLflow tracking enabled: {mlflow_cfg.tracking_uri}")
+            try:
+                self.writer = _MlflowTensorboardWriter(
+                    self.writer,
+                    experiment_name=mlflow_cfg.experiment_name,
+                    tracking_uri=mlflow_cfg.tracking_uri,
+                    insecure_tls=mlflow_cfg.insecure_tls,
+                )
+                print(f"[WBCRunner] MLflow tracking enabled: {mlflow_cfg.tracking_uri}")
+            except Exception as e:
+                print(f"[WBCRunner] WARNING: MLflow init failed, continuing without it: {e}")
 
     def save(self, path: str, infos: dict | None = None) -> None:
         super().save(path, infos)
