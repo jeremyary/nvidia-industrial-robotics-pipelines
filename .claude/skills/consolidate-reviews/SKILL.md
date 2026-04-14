@@ -26,6 +26,10 @@ Read every file matching the provided pattern. For each file, extract:
 - Individual findings with their severity (Critical, Warning, Suggestion, Positive)
 - For each finding: the description, affected location (file/section), and suggested resolution
 
+### 1.5. Cross-Reference TECH_DEBT.md
+
+Before de-duplicating, read `.changes/TECH_DEBT.md` (if it exists) and identify any findings that match items already tracked there. Remove these from the triage table and list them in a separate "Already Tracked" section with the mapping (e.g., "W-3 → TD-7"). This prevents the user from re-triaging issues that were already decided in previous reviews.
+
 ### 2. De-duplicate Findings
 
 Two findings are duplicates when they:

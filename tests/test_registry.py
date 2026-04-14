@@ -77,7 +77,7 @@ class TestRegisterModel:
             version="v1",
             model_format_name="onnx",
             model_format_version="1",
-            description=None,
+            version_description=None,
             metadata={},
         )
 
@@ -139,5 +139,5 @@ class TestRegisterModel:
             register_model(name="m", uri="s3://b/m.onnx", version="v1")
 
         call_kwargs = fake_mod.ModelRegistry.call_args[1]
-        assert "model-registry" in call_kwargs["server_address"]
-        assert call_kwargs["is_secure"] is True
+        assert "wbc-model-registry" in call_kwargs["server_address"]
+        assert call_kwargs["is_secure"] is False

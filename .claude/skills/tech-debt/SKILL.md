@@ -1,39 +1,62 @@
 ---
-description: Scan all consolidated review files for items with Decided=Defer and maintain a technical debt tracker at .changes/TECH_DEBT.md. Creates or updates the file each time it's run.
+description: Incrementally update .changes/TECH_DEBT.md by adding newly deferred items from the latest consolidated review. Run before /archive-changes to ensure deferred items are captured.
 user_invocable: true
 ---
 
 # Technical Debt Tracker
 
-Scan all consolidated review files (current staging area and archived changesets) for items marked as `Defer` in the `Decided` column, and produce or update a single technical debt tracker at `.changes/TECH_DEBT.md`.
+Incrementally update `.changes/TECH_DEBT.md` by scanning the most recent consolidated review for items marked `Defer` that aren't already tracked. This preserves deferred items before a review is archived, so nothing falls through the cracks.
 
 ## Process
 
-### 1. Find All Consolidated Reviews
+### 1. Read Current State
 
-Search for consolidated review files in both locations:
-- `.changes/reviews/*-consolidated.md` (current staging area)
-- `.changes/*/reviews/*-consolidated.md` (archived changesets)
+Read `.changes/TECH_DEBT.md` if it exists. Note the highest `TD-N` ID so new items get appended with the next number.
 
-### 2. Extract Deferred Items
+### 2. Find the Latest Consolidated Review
 
-For each consolidated review, parse every table row where the `Decided` column contains `Defer`. Extract:
+Look in the staging area first:
+- `.changes/reviews/*-consolidated.md`
+
+If staging is empty, find the most recently archived one:
+- `.changes/*/reviews/*-consolidated.md` (sorted by directory date)
+
+### 3. Extract New Deferred Items
+
+Parse the consolidated review for table rows where `Decided` contains `Defer`. For each, extract:
 - The finding ID (e.g., C-3, W-5, S-2)
 - The finding description
-- The original severity (Critical, Warning, Suggestion — inferred from the ID prefix or section heading)
+- The original severity (Critical, Warning, Suggestion — inferred from ID prefix)
 - The suggested resolution
-- The rationale from the Suggested Disposition column (the "why" behind the deferral)
-- The source file path (which consolidated review it came from)
+- The deferral rationale from the Suggested Disposition column
+- The source (archive slug or `staging`)
 
-Also scan for items where `Decided` is still `_pending_` — list these separately as untriaged.
+**Skip items already in TECH_DEBT.md.** Match by description content, not by finding ID (since C-3 in one review is unrelated to C-3 in another). If an item's description substantially matches an existing TD entry, skip it.
 
-### 3. Check for Resolved Items
+### 4. Append New Items
 
-If `.changes/TECH_DEBT.md` already exists, read it and identify any items previously tracked that are no longer present in any consolidated review (the finding was removed or the review was deleted). Mark these as potentially resolved — but do NOT remove them automatically. Flag them for the user to confirm.
+Add each new deferred item to the appropriate category section in TECH_DEBT.md with the next available `TD-N` ID. Categorize by content:
 
-### 4. Write .changes/TECH_DEBT.md
+- **Security** — auth, input validation, injection, secrets, TLS, container hardening
+- **Reliability** — retries, timeouts, health probes, training hyperparameters, reward tuning
+- **Code Quality** — type safety, test coverage, documentation, code patterns
+- **Ops & Deployment** — dependency pinning, image tags, manifests, Makefile, container build
 
-Create or overwrite the file using this format:
+Update the `Last updated` timestamp and `Sources` count in the header.
+
+### 5. Flag Untriaged Items
+
+Also scan for rows where `Decided` is still `_pending_`. Report these to the user — they need triage before archiving.
+
+### 6. Report
+
+Tell the user:
+- How many new items were added (with their TD-N IDs)
+- How many were already tracked (skipped)
+- Whether any untriaged items remain
+- The file is ready for `/archive-changes`
+
+## File Format
 
 ```markdown
 # Technical Debt
@@ -52,49 +75,19 @@ Items deferred during review triage. Each links back to its source review for fu
 | TD-1 | <description> | Critical | <resolution> | <rationale> | <archive slug or "staging"> |
 
 ### Reliability
-
-| # | Finding | Original Severity | Suggested Resolution | Deferred Because | Source |
-|---|---------|------------------|---------------------|-----------------|--------|
+...
 
 ### Code Quality
-
-| # | Finding | Original Severity | Suggested Resolution | Deferred Because | Source |
-|---|---------|------------------|---------------------|-----------------|--------|
+...
 
 ### Ops & Deployment
-
-| # | Finding | Original Severity | Suggested Resolution | Deferred Because | Source |
-|---|---------|------------------|---------------------|-----------------|--------|
-
-## Untriaged
-
-Items where `Decided` is still `_pending_` — these need triage before they can be tracked or dismissed.
-
-| # | Finding | Severity | Source |
-|---|---------|----------|--------|
-
-## Potentially Resolved
-
-Items previously tracked here that no longer appear in any consolidated review. Confirm resolution before removing.
-
-| # | Finding | Last Seen In | Notes |
-|---|---------|-------------|-------|
+...
 ```
 
-### Categorization Rules
+## Guidelines
 
-Assign each deferred item to a category based on its content:
-
-- **Security** — auth, input validation, injection, secrets, TLS, SSRF, container hardening
-- **Reliability** — retries, circuit breakers, timeouts, health probes, rate limiting, PDB, HPA
-- **Code Quality** — type safety, test coverage, logging, documentation, Literal types, OpenAPI accuracy
-- **Ops & Deployment** — dependency pinning, image tags, structured logging, metrics, manifests
-
-If an item spans categories, put it in the most impactful one.
-
-### Guidelines
-
-- **Stable IDs.** Technical debt items get `TD-N` IDs. Once assigned, an ID should not change between runs — append new items at the end. This lets the user reference `TD-3` in conversation and have it mean the same thing next week.
+- **Stable IDs.** Once a `TD-N` ID is assigned, it never changes. Always append new items at the end with the next sequential number.
+- **Incremental, not full rebuild.** Don't rewrite the file from scratch — read, diff, append. Existing items are preserved exactly as written.
 - **Omit empty sections.** If no items fall in a category, skip that section.
-- **Don't editorialize beyond the source.** The rationale column should reflect what was decided during triage, not new opinions. The source review has the full context.
-- **Link to source.** The Source column should name the archive slug (e.g., `2026-04-03_initial-build`) or `staging` for unarchived reviews, so the user can find the original review for details.
+- **Don't editorialize.** The rationale column should reflect what was decided during triage, not new opinions.
+- **Source = where to find details.** Use the archive slug (e.g., `2026-04-08_initial-build`) for archived reviews, or `staging` for the current unarchived review.

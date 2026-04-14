@@ -99,9 +99,9 @@ FROM isaaclab-base AS runtime
 COPY src/ /workspace/wbc_pipeline/src/
 COPY pyproject.toml /workspace/wbc_pipeline/
 
-# Install wbc_pipeline in editable mode
+# Install wbc_pipeline with pipeline + registry extras
 RUN --mount=type=cache,target=/root/.cache/pip \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e /workspace/wbc_pipeline
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e "/workspace/wbc_pipeline[pipeline,registry]"
 
 # Convenience aliases
 RUN echo "export ISAACLAB_PATH=${ISAACLAB_PATH}" >> /root/.bashrc && \

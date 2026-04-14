@@ -1,0 +1,102 @@
+# Model Registry instance for WBC training pipelines.
+# Requires: model-registry-operator (part of RHOAI).
+#
+# Prerequisites:
+#   The wbc-model-registry-db Secret must exist before applying this manifest.
+#   It is created by `make deploy-model-registry` from .env variables:
+#     MODEL_REGISTRY_DB_USER, MODEL_REGISTRY_DB_PASSWORD, MODEL_REGISTRY_DB_NAME
+#
+# Deploy: make deploy-model-registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wbc-model-registry-postgres
+  namespace: rhoai-model-registries
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wbc-model-registry-postgres
+  template:
+    metadata:
+      labels:
+        app: wbc-model-registry-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: registry.redhat.io/rhel9/postgresql-16:latest
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: wbc-model-registry-db
+                  key: POSTGRES_USER
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wbc-model-registry-db
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRESQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: wbc-model-registry-db
+                  key: POSTGRES_DB
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/pgsql/data
+          securityContext:
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: wbc-model-registry-pgdata
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wbc-model-registry-pgdata
+  namespace: rhoai-model-registries
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wbc-model-registry-postgres
+  namespace: rhoai-model-registries
+spec:
+  selector:
+    app: wbc-model-registry-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: modelregistry.opendatahub.io/v1beta1
+kind: ModelRegistry
+metadata:
+  name: wbc-model-registry
+  namespace: rhoai-model-registries
+spec:
+  postgres:
+    host: wbc-model-registry-postgres
+    port: 5432
+    database: wbc_model_registry
+    username: mlmduser
+    passwordSecret:
+      name: wbc-model-registry-db
+      key: POSTGRES_PASSWORD
+  rest:
+    port: 8080

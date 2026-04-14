@@ -26,7 +26,7 @@ def _configure_gpu_step(task: dsl.PipelineTask) -> None:
         secret_name="minio-credentials",
         secret_key_to_env={"MINIO_ROOT_USER": "AWS_ACCESS_KEY_ID", "MINIO_ROOT_PASSWORD": "AWS_SECRET_ACCESS_KEY"},
     )
-    kubernetes.set_image_pull_policy(task, "IfNotPresent")
+    kubernetes.set_image_pull_policy(task, "Always")
 
 
 def _configure_cpu_step(task: dsl.PipelineTask) -> None:
@@ -40,7 +40,7 @@ def _configure_cpu_step(task: dsl.PipelineTask) -> None:
         secret_name="minio-credentials",
         secret_key_to_env={"MINIO_ROOT_USER": "AWS_ACCESS_KEY_ID", "MINIO_ROOT_PASSWORD": "AWS_SECRET_ACCESS_KEY"},
     )
-    kubernetes.set_image_pull_policy(task, "IfNotPresent")
+    kubernetes.set_image_pull_policy(task, "Always")
 
 
 @dsl.container_component
@@ -259,6 +259,135 @@ def wbc_training_pipeline(
     _configure_cpu_step(validate_task)
     validate_task.set_caching_options(False)
 
+    register_task = register_model_op(
+        model_name=model_name,
+        model_version=model_version,
+        onnx_s3_key=train_task.outputs["onnx_s3_key"],
+        s3_bucket=s3_bucket,
+    )
+    register_task.after(validate_task)
+    _configure_cpu_step(register_task)
+    register_task.set_cpu_request("1")
+    register_task.set_memory_request("2Gi")
+    register_task.set_env_variable("MODEL_REGISTRY_ADDRESS", MODEL_REGISTRY_ADDRESS)
+    register_task.set_caching_options(False)
+
+
+@dsl.container_component
+def train_and_export_pytorchjob_op(
+    job_name: str,
+    task: str,
+    num_envs: int,
+    max_iterations: int,
+    checkpoint_interval: int,
+    s3_prefix: str,
+    queue_name: str,
+    onnx_s3_key: dsl.OutputPath(str),
+):
+    """Launch RSL-RL training + ONNX export as a PyTorchJob via Training Operator."""
+    return dsl.ContainerSpec(
+        image=DEFAULT_IMAGE,
+        command=["/bin/bash"],
+        args=[
+            "-c",
+            # Parameters: $1=job_name, $2=task, $3=num_envs, $4=max_iterations,
+            # $5=checkpoint_interval, $6=s3_prefix, $7=queue_name, $8=output_file
+            "set -euo pipefail\n"
+            'JOB_NAME="$1"; export TASK="$2" NUM_ENVS="$3" MAX_ITERS="$4"\n'
+            'export CHECKPOINT_INTERVAL="$5" S3_PREFIX="$6"\n'
+            'QUEUE_NAME="$7"; OUTPUT_FILE="$8"\n'
+            'export ONNX_DIR="/tmp/onnx_export" RESUME="s3"\n'
+            "NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)\n"
+            "\n"
+            'echo "=== WBC PyTorchJob Launcher ==="\n'
+            'echo "Job: ${JOB_NAME}"\n'
+            'echo "Task: ${TASK}"\n'
+            'echo "Envs: ${NUM_ENVS}, Iterations: ${MAX_ITERS}"\n'
+            'echo "Namespace: ${NAMESPACE}"\n'
+            'echo "Start time: $(date -u)"\n'
+            "\n"
+            'TRAIN_CMD="/workspace/isaaclab/isaaclab.sh -p -m wbc_pipeline.train_and_export"\n'
+            "\n"
+            "QUEUE_ARGS=''\n"
+            'if [ -n "${QUEUE_NAME}" ]; then\n'
+            '    QUEUE_ARGS="--queue-name ${QUEUE_NAME}"\n'
+            "fi\n"
+            "\n"
+            "/workspace/isaaclab/_isaac_sim/python.sh -m wbc_pipeline.pytorchjob \\\n"
+            '  --name "${JOB_NAME}" \\\n'
+            '  --namespace "${NAMESPACE}" \\\n'
+            '  --image "' + DEFAULT_IMAGE + '" \\\n'
+            '  --command "${TRAIN_CMD}" \\\n'
+            "  --num-workers 1 \\\n"
+            "  --gpus-per-worker 1 \\\n"
+            "  --service-account-name isaaclab-gpu \\\n"
+            "  --run-as-user 0 \\\n"
+            "  ${QUEUE_ARGS}\n"
+            "\n"
+            'printf "%s" "${S3_PREFIX}/policy.onnx" > "${OUTPUT_FILE}"\n'
+            'echo ""\n'
+            'echo "End time: $(date -u)"\n'
+            'echo "=== WBC PyTorchJob Launcher: COMPLETE ==="',
+            "--",
+            job_name,
+            task,
+            num_envs,
+            max_iterations,
+            checkpoint_interval,
+            s3_prefix,
+            queue_name,
+            onnx_s3_key,
+        ],
+    )
+
+
+@dsl.pipeline(
+    name="wbc-training-distributed",
+    description="G1 29-DOF WBC training via PyTorchJob (infra validation)",
+)
+def wbc_training_pytorchjob_pipeline(
+    job_name: str = "wbc-train",
+    task: str = "WBC-Velocity-Flat-G1-29DOF-v0",
+    num_envs: int = 4096,
+    max_iterations: int = 6000,
+    checkpoint_interval: int = 100,
+    s3_prefix: str = "checkpoints",
+    s3_bucket: str = "wbc-training",
+    expected_obs_dim: int = 103,
+    expected_action_dim: int = 29,
+    model_name: str = "g1-wbc-flat-policy",
+    model_version: str = "v1",
+    queue_name: str = "",
+):
+    # Step 1: Train + Export via PyTorchJob (launcher is CPU-only)
+    train_task = train_and_export_pytorchjob_op(
+        job_name=job_name,
+        task=task,
+        num_envs=num_envs,
+        max_iterations=max_iterations,
+        checkpoint_interval=checkpoint_interval,
+        s3_prefix=s3_prefix,
+        queue_name=queue_name,
+    )
+    _configure_cpu_step(train_task)
+    # Launcher is CPU-only but must tolerate GPU taint to schedule on GPU nodes
+    kubernetes.add_toleration(train_task, key="nvidia.com/gpu", operator="Exists", effect="NoSchedule")
+    train_task.set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_TRACKING_URI)
+    train_task.set_env_variable("MLFLOW_TRACKING_INSECURE_TLS", "true")
+    train_task.set_env_variable("ACCEPT_EULA", "Y")
+    kubernetes.set_timeout(train_task, 28800)
+    train_task.set_caching_options(False)
+
+    # Step 2: Validate ONNX
+    validate_task = validate_onnx_op(
+        onnx_s3_key=train_task.outputs["onnx_s3_key"],
+        expected_obs_dim=expected_obs_dim,
+        expected_action_dim=expected_action_dim,
+    )
+    _configure_cpu_step(validate_task)
+    validate_task.set_caching_options(False)
+
+    # Step 3: Register model
     register_task = register_model_op(
         model_name=model_name,
         model_version=model_version,

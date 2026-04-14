@@ -1,0 +1,42 @@
+# This project was developed with assistance from AI tools.
+#
+# RBAC for the DSPA pipeline service account to create and manage
+# PyTorchJob CRs via the Training Operator.
+#
+# The pipeline SA ("pipeline-runner-dspa") runs KFP steps that act as
+# launchers — creating PyTorchJob CRs and polling their status.
+# The Training Operator manages the actual training pods.
+#
+# Usage:
+#   oc apply -f deploy/infra/training-operator-rbac.yaml
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pytorchjob-launcher
+  namespace: wbc-training
+rules:
+  - apiGroups: ["kubeflow.org"]
+    resources: ["pytorchjobs"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
+  - apiGroups: ["kubeflow.org"]
+    resources: ["pytorchjobs/status"]
+    verbs: ["get"]
+  # Needed to read pod logs for training diagnostics
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dspa-pytorchjob-launcher
+  namespace: wbc-training
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-runner-dspa
+    namespace: wbc-training
+roleRef:
+  kind: Role
+  name: pytorchjob-launcher
+  apiGroup: rbac.authorization.k8s.io

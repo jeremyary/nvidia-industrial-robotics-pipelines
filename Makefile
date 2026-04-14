@@ -6,6 +6,11 @@ SONIC_IMAGE ?= quay.io/jary/isaaclab-g1-sonic
 TAG ?= latest
 NAMESPACE ?= wbc-training
 
+# Model Registry Postgres credentials (override in .env)
+MODEL_REGISTRY_DB_USER ?= mlmduser
+MODEL_REGISTRY_DB_PASSWORD ?= mlmdpass
+MODEL_REGISTRY_DB_NAME ?= wbc_model_registry
+
 # ── Job registry ────────────────────────────────────────────────────
 # Map JOB names to YAML files and K8s job names.
 # Add new jobs here — no new targets needed.
@@ -77,10 +82,11 @@ _JOB_NEEDS_INFRA = $(JOB_NEEDS_INFRA_$(JOB))
 
 .PHONY: build push ngc-login local-smoke-test \
         build-sonic push-sonic \
-        deploy-infra \
+        deploy-infra deploy-pytorchjob-infra deploy-model-registry \
         job-deploy job-logs job-clean job-list \
-        pipeline-compile pipeline-deploy \
-        sonic-pipeline-compile \
+        pipeline-compile pipeline-compile-distributed \
+        sonic-pipeline-compile sonic-pipeline-compile-distributed \
+        pipeline-deploy \
         lint test
 
 # ── Container ────────────────────────────────────────────────────────
@@ -128,6 +134,22 @@ ifdef HF_TOKEN
 		--dry-run=client -o yaml | oc apply -f -
 	@echo "HF credentials secret created/updated."
 endif
+
+# ── Model Registry infrastructure ──────────────────────────────────
+deploy-model-registry:
+	oc create secret generic wbc-model-registry-db -n rhoai-model-registries \
+		--from-literal=POSTGRES_USER=$(MODEL_REGISTRY_DB_USER) \
+		--from-literal=POSTGRES_PASSWORD=$(MODEL_REGISTRY_DB_PASSWORD) \
+		--from-literal=POSTGRES_DB=$(MODEL_REGISTRY_DB_NAME) \
+		--dry-run=client -o yaml | oc apply -f -
+	oc apply -f deploy/infra/model-registry.yaml
+	@echo "Model Registry deployed. Secret created from MODEL_REGISTRY_DB_* vars."
+
+# ── PyTorchJob infrastructure ──────────────────────────────────────
+deploy-pytorchjob-infra:
+	oc apply -f deploy/infra/training-operator-rbac.yaml
+	WBC_NAMESPACE=$(NAMESPACE) envsubst < deploy/infra/kueue.yaml | oc apply -f -
+	@echo "PyTorchJob RBAC and Kueue resources deployed."
 
 # ── Parametric job management ────────────────────────────────────────
 #
@@ -199,8 +221,14 @@ job-list:
 pipeline-compile:
 	python -m wbc_pipeline.pipeline
 
+pipeline-compile-distributed:
+	python -c "from kfp import compiler; from wbc_pipeline.pipeline import wbc_training_pytorchjob_pipeline; compiler.Compiler().compile(wbc_training_pytorchjob_pipeline, 'wbc_training_pytorchjob_pipeline.yaml'); print('Pipeline compiled to wbc_training_pytorchjob_pipeline.yaml')"
+
 sonic-pipeline-compile:
 	python -m wbc_pipeline.sonic.pipeline
+
+sonic-pipeline-compile-distributed:
+	python -c "from kfp import compiler; from wbc_pipeline.sonic.pipeline import sonic_training_pytorchjob_pipeline; compiler.Compiler().compile(sonic_training_pytorchjob_pipeline, 'sonic_training_pytorchjob_pipeline.yaml'); print('Pipeline compiled to sonic_training_pytorchjob_pipeline.yaml')"
 
 pipeline-deploy:
 	oc apply -f deploy/infra/dspa.yaml

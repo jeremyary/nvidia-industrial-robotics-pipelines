@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import os
 
+from wbc_pipeline.constants import MODEL_REGISTRY_ADDRESS as _DEFAULT_REGISTRY_ADDRESS
+
 
 def _read_sa_token() -> str | None:
     """Read Kubernetes service account token if available."""
@@ -36,12 +38,9 @@ def register_model(
     """Register a model with the RHOAI Model Registry. Returns the model version ID."""
     from model_registry import ModelRegistry
 
-    server_address = os.environ.get(
-        "MODEL_REGISTRY_ADDRESS",
-        "https://model-registry.redhat-ods-applications.svc:443",
-    )
+    server_address = os.environ.get("MODEL_REGISTRY_ADDRESS", _DEFAULT_REGISTRY_ADDRESS)
     is_secure = server_address.startswith("https")
-    token = _read_sa_token()
+    token = _read_sa_token() if is_secure else None
 
     registry = ModelRegistry(
         server_address=server_address,
@@ -60,7 +59,7 @@ def register_model(
         version=version,
         model_format_name=model_format_name,
         model_format_version=model_format_version,
-        description=description,
+        version_description=description,
         metadata=metadata or {},
     )
 
