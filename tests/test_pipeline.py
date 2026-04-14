@@ -3,29 +3,17 @@
 
 from __future__ import annotations
 
-import tempfile
-
-import yaml
-from kfp import compiler
+from pipeline_test_utils import compile_pipeline, compile_pipeline_full_yaml
 
 from wbc_pipeline.pipeline import wbc_training_pipeline
 
 
 def _compile_pipeline() -> dict:
-    """Compile the pipeline and return the first YAML document (pipeline spec)."""
-    with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
-        compiler.Compiler().compile(wbc_training_pipeline, f.name)
-        f.seek(0)
-        docs = list(yaml.safe_load_all(f.read()))
-        return docs[0]
+    return compile_pipeline(wbc_training_pipeline)
 
 
 def _compile_pipeline_full_yaml() -> str:
-    """Compile the pipeline and return raw YAML string."""
-    with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
-        compiler.Compiler().compile(wbc_training_pipeline, f.name)
-        f.seek(0)
-        return f.read().decode()
+    return compile_pipeline_full_yaml(wbc_training_pipeline)
 
 
 class TestPipelineCompilation:
@@ -36,19 +24,26 @@ class TestPipelineCompilation:
         spec = _compile_pipeline()
         assert "root" in spec
 
-    def test_has_two_tasks(self):
-        """Pipeline contains train-and-export and validate-onnx tasks."""
+    def test_has_three_tasks(self):
+        """Pipeline contains train-and-export, validate-onnx, and register-model tasks."""
         spec = _compile_pipeline()
         tasks = spec["root"]["dag"]["tasks"]
-        assert len(tasks) == 2
+        assert len(tasks) == 3
         assert "train-and-export-op" in tasks
         assert "validate-onnx-op" in tasks
+        assert "register-model-op" in tasks
 
     def test_validate_depends_on_train(self):
         """Validate task depends on train task output."""
         spec = _compile_pipeline()
         validate = spec["root"]["dag"]["tasks"]["validate-onnx-op"]
         assert "train-and-export-op" in validate.get("dependentTasks", [])
+
+    def test_register_depends_on_validate(self):
+        """Register task depends on validate task."""
+        spec = _compile_pipeline()
+        register = spec["root"]["dag"]["tasks"]["register-model-op"]
+        assert "validate-onnx-op" in register.get("dependentTasks", [])
 
 
 class TestPipelineParameters:

@@ -1,0 +1,79 @@
+# This project was developed with assistance from AI tools.
+#
+# L40S SONIC training: 1 GPU, 512 envs, 100 iterations.
+# Use this to validate the full training flow before requesting B200 time.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sonic-training-l40s
+  namespace: wbc-training
+spec:
+  activeDeadlineSeconds: 7200
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: sonic-training-l40s
+        pipeline.wbc/phase: training
+        pipeline.wbc/component: sonic
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 120
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      serviceAccountName: isaaclab-gpu
+      containers:
+        - name: sonic-train
+          image: quay.io/jary/isaaclab-g1-sonic:latest
+          securityContext:
+            runAsUser: 0
+          args:
+            - -m
+            - wbc_pipeline.sonic.train
+            - --num_gpus
+            - "1"
+            - --num_envs
+            - "512"
+            - --max_iterations
+            - "100"
+          env:
+            - name: ACCEPT_EULA
+              value: "Y"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: S3_ENDPOINT
+              value: "http://minio.wbc-training.svc.cluster.local:9000"
+            - name: S3_BUCKET
+              value: "wbc-training"
+            - name: S3_DATA_PREFIX
+              value: "bones-seed/processed"
+            - name: S3_CHECKPOINT_PREFIX
+              value: "sonic-checkpoints"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: MLFLOW_TRACKING_URI
+              value: "https://mlflow.redhat-ods-applications.svc:8443"
+            - name: MLFLOW_TRACKING_INSECURE_TLS
+              value: "true"
+            - name: MLFLOW_EXPERIMENT_NAME
+              value: "g1-sonic-locomotion"
+            - name: CHECKPOINT_INTERVAL
+              value: "100"
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+            requests:
+              nvidia.com/gpu: "1"
+              cpu: "8"
+              memory: 64Gi

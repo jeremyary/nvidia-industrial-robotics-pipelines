@@ -2,6 +2,7 @@
 export
 
 IMAGE ?= quay.io/jary/isaaclab-g1-train
+SONIC_IMAGE ?= quay.io/jary/isaaclab-g1-sonic
 TAG ?= latest
 NAMESPACE ?= wbc-training
 
@@ -49,15 +50,37 @@ JOB_FILE_training-preset-6k     = deploy/jobs/training-preset-6k.yaml
 JOB_NAME_training-preset-6k     = training-preset-6k
 JOB_NEEDS_INFRA_training-preset-6k = true
 
+JOB_FILE_sonic-data-prep        = deploy/jobs/sonic-data-prep.yaml
+JOB_NAME_sonic-data-prep        = sonic-data-prep
+JOB_NEEDS_INFRA_sonic-data-prep = true
+
+JOB_FILE_sonic-smoke-test       = deploy/jobs/sonic-smoke-test.yaml
+JOB_NAME_sonic-smoke-test       = sonic-smoke-test
+JOB_NEEDS_INFRA_sonic-smoke-test = false
+
+JOB_FILE_sonic-test-l40s        = deploy/jobs/sonic-test-l40s.yaml
+JOB_NAME_sonic-test-l40s        = sonic-test-l40s
+JOB_NEEDS_INFRA_sonic-test-l40s = true
+
+JOB_FILE_sonic-training         = deploy/jobs/sonic-training.yaml
+JOB_NAME_sonic-training         = sonic-training
+JOB_NEEDS_INFRA_sonic-training  = true
+
+JOB_FILE_sonic-training-l40s    = deploy/jobs/sonic-training-l40s.yaml
+JOB_NAME_sonic-training-l40s    = sonic-training-l40s
+JOB_NEEDS_INFRA_sonic-training-l40s = true
+
 # Resolve JOB variable to file/name/infra-flag
 _JOB_FILE       = $(JOB_FILE_$(JOB))
 _JOB_NAME       = $(JOB_NAME_$(JOB))
 _JOB_NEEDS_INFRA = $(JOB_NEEDS_INFRA_$(JOB))
 
 .PHONY: build push ngc-login local-smoke-test \
+        build-sonic push-sonic \
         deploy-infra \
         job-deploy job-logs job-clean job-list \
         pipeline-compile pipeline-deploy \
+        sonic-pipeline-compile \
         lint test
 
 # ── Container ────────────────────────────────────────────────────────
@@ -69,6 +92,12 @@ build: ngc-login
 
 push: build
 	podman push $(IMAGE):$(TAG)
+
+build-sonic: ngc-login
+	podman build --format docker -t $(SONIC_IMAGE):$(TAG) -f Containerfile.sonic .
+
+push-sonic: build-sonic
+	podman push $(SONIC_IMAGE):$(TAG)
 
 # ── Local GPU smoke test (Podman + CDI) ──────────────────────────────
 local-smoke-test:
@@ -93,6 +122,12 @@ deploy-infra:
 	oc wait --for=condition=Ready dspa/dspa -n $(NAMESPACE) --timeout=300s
 	oc apply -f deploy/infra/dspa-rbac.yaml
 	@echo "DSPA deployed. Verify runner SA: oc get sa -n $(NAMESPACE) | grep dspa"
+ifdef HF_TOKEN
+	oc create secret generic hf-credentials -n $(NAMESPACE) \
+		--from-literal=HF_TOKEN=$(HF_TOKEN) \
+		--dry-run=client -o yaml | oc apply -f -
+	@echo "HF credentials secret created/updated."
+endif
 
 # ── Parametric job management ────────────────────────────────────────
 #
@@ -152,10 +187,20 @@ job-list:
 	@echo "    training-rough-6k    - rough terrain"
 	@echo "    training-warehouse-6k - warehouse scene"
 	@echo "    training-preset-6k   - Isaac Lab stock preset"
+	@echo ""
+	@echo "  SONIC (GEAR-SONIC motion-tracking):"
+	@echo "    sonic-smoke-test     - container + import sanity check"
+	@echo "    sonic-data-prep      - BONES-SEED download + CSV-to-PKL (one-time)"
+	@echo "    sonic-test-l40s      - L40S validation (1 GPU, 512 envs, 100 iters)"
+	@echo "    sonic-training       - production (4 GPUs, 4096 envs, 10K iters)"
+	@echo "    sonic-training-l40s  - L40S training (1 GPU, 512 envs, 100 iters)"
 
 # ── Pipeline ────────────────────────────────────────────────────────
 pipeline-compile:
 	python -m wbc_pipeline.pipeline
+
+sonic-pipeline-compile:
+	python -m wbc_pipeline.sonic.pipeline
 
 pipeline-deploy:
 	oc apply -f deploy/infra/dspa.yaml

@@ -1,11 +1,11 @@
 # This project was developed with assistance from AI tools.
-"""KFP v2 pipeline: train G1 29-DOF locomotion policy, export ONNX, validate."""
+"""KFP v2 pipeline: train G1 29-DOF locomotion policy, export ONNX, validate, register."""
 
 from kfp import dsl, kubernetes
 
+from wbc_pipeline.constants import MLFLOW_TRACKING_URI, MODEL_REGISTRY_ADDRESS, S3_ENDPOINT
+
 DEFAULT_IMAGE = "quay.io/jary/isaaclab-g1-train:latest"
-S3_ENDPOINT = "http://minio.wbc-training.svc.cluster.local:9000"
-MLFLOW_TRACKING_URI = "https://mlflow.redhat-ods-applications.svc:8443"
 
 
 def _configure_gpu_step(task: dsl.PipelineTask) -> None:
@@ -35,7 +35,6 @@ def _configure_cpu_step(task: dsl.PipelineTask) -> None:
     task.set_memory_request("8Gi")
     task.set_env_variable("PYTHONUNBUFFERED", "1")
     task.set_env_variable("S3_ENDPOINT", S3_ENDPOINT)
-    kubernetes.add_toleration(task, key="nvidia.com/gpu", operator="Exists", effect="NoSchedule")
     kubernetes.use_secret_as_env(
         task,
         secret_name="minio-credentials",
@@ -59,12 +58,14 @@ def train_and_export_op(
         command=["/bin/bash"],
         args=[
             "-c",
-            # Parameters arrive as positional args: $1=task, $2=num_envs,
-            # $3=max_iterations, $4=checkpoint_interval, $5=s3_prefix, $6=output_file
+            # Parameters: $1=task, $2=num_envs, $3=max_iterations,
+            # $4=checkpoint_interval, $5=s3_prefix, $6=output_file
             "set -euo pipefail\n"
-            'TASK="$1"; NUM_ENVS="$2"; MAX_ITERS="$3"; CKPT_INTERVAL="$4"\n'
-            'S3_PREFIX="$5"; OUTPUT_FILE="$6"\n'
-            'ONNX_DIR="/tmp/onnx_export"\n'
+            'export TASK="$1" NUM_ENVS="$2" MAX_ITERS="$3"\n'
+            'export CHECKPOINT_INTERVAL="$4" S3_PREFIX="$5"\n'
+            'OUTPUT_FILE="$6"\n'
+            'export ONNX_DIR="/tmp/onnx_export"\n'
+            'export RESUME="s3"\n'
             'mkdir -p "${ONNX_DIR}"\n'
             "\n"
             'echo "=== WBC Training Pipeline ==="\n'
@@ -74,80 +75,7 @@ def train_and_export_op(
             'echo "S3 prefix: ${S3_PREFIX}"\n'
             'echo "Start time: $(date -u)"\n'
             "\n"
-            'export S3_PREFIX CHECKPOINT_INTERVAL="${CKPT_INTERVAL}"\n'
-            "\n"
-            '/workspace/isaaclab/isaaclab.sh -p -c "\n'
-            "import sys, os\n"
-            "sys.argv = ['train', '--task', '${TASK}', '--headless',\n"
-            "            '--num_envs', '${NUM_ENVS}', '--max_iterations', '${MAX_ITERS}',\n"
-            "            '--resume', 's3']\n"
-            "\n"
-            "from isaaclab.app import AppLauncher\n"
-            "import argparse\n"
-            "parser = argparse.ArgumentParser()\n"
-            "parser.add_argument('--task', type=str)\n"
-            "parser.add_argument('--num_envs', type=int)\n"
-            "parser.add_argument('--max_iterations', type=int)\n"
-            "parser.add_argument('--resume', type=str, default=None)\n"
-            "AppLauncher.add_app_launcher_args(parser)\n"
-            "args = parser.parse_args()\n"
-            "app_launcher = AppLauncher(args)\n"
-            "\n"
-            "import gymnasium as gym\n"
-            "from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper\n"
-            "from isaaclab_rl.rsl_rl.exporter import export_policy_as_onnx\n"
-            "import wbc_pipeline.envs\n"
-            "from wbc_pipeline.config import TrainingConfig\n"
-            "from wbc_pipeline.runner import WBCRunner\n"
-            "\n"
-            "def _resolve(ep):\n"
-            "    if isinstance(ep, str):\n"
-            "        import importlib\n"
-            "        mod, cls = ep.rsplit(':', 1)\n"
-            "        return getattr(importlib.import_module(mod), cls)()\n"
-            "    return ep()\n"
-            "\n"
-            "spec = gym.spec(args.task)\n"
-            "env_cfg = _resolve(spec.kwargs['env_cfg_entry_point'])\n"
-            "agent_cfg = _resolve(spec.kwargs['rsl_rl_cfg_entry_point'])\n"
-            "env_cfg.scene.num_envs = args.num_envs\n"
-            "agent_cfg.max_iterations = args.max_iterations\n"
-            "\n"
-            "env = gym.make(args.task, cfg=env_cfg)\n"
-            "env = RslRlVecEnvWrapper(env)\n"
-            "\n"
-            "training_cfg = TrainingConfig()\n"
-            "log_dir = os.path.join('/workspace/isaaclab/logs/rsl_rl', agent_cfg.experiment_name)\n"
-            "os.makedirs(log_dir, exist_ok=True)\n"
-            "runner = WBCRunner(env, agent_cfg.to_dict(), log_dir=log_dir,\n"
-            "                  device=agent_cfg.device, training_cfg=training_cfg)\n"
-            "\n"
-            "if args.resume == 's3':\n"
-            "    runner.resume_latest_from_s3()\n"
-            "\n"
-            "runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)\n"
-            "\n"
-            "print()\n"
-            "print('=== Exporting ONNX policy ===')\n"
-            "policy = runner.alg.policy\n"
-            "normalizer = policy.actor_obs_normalizer\n"
-            "export_policy_as_onnx(policy, path='${ONNX_DIR}', normalizer=normalizer, filename='policy.onnx')\n"
-            "\n"
-            "import onnx\n"
-            "model = onnx.load('${ONNX_DIR}/policy.onnx')\n"
-            "in_dims = [d.dim_value for d in model.graph.input[0].type.tensor_type.shape.dim]\n"
-            "out_dims = [d.dim_value for d in model.graph.output[0].type.tensor_type.shape.dim]\n"
-            "print(f'ONNX exported: input {in_dims}, output {out_dims}')\n"
-            "\n"
-            "onnx_s3_key = f'{training_cfg.s3.prefix}/policy.onnx'\n"
-            "if runner._s3_client is not None:\n"
-            "    runner._s3_client.upload_file('${ONNX_DIR}/policy.onnx',\n"
-            "        training_cfg.s3.bucket, onnx_s3_key)\n"
-            "    print(f'ONNX uploaded to s3://{training_cfg.s3.bucket}/{onnx_s3_key}')\n"
-            "\n"
-            "env.close()\n"
-            "app_launcher.app.close()\n"
-            '"\n'
+            "/workspace/isaaclab/isaaclab.sh -p -m wbc_pipeline.train_and_export\n"
             "\n"
             'printf "%s" "${S3_PREFIX}/policy.onnx" > "${OUTPUT_FILE}"\n'
             'echo ""\n'
@@ -178,62 +106,70 @@ def validate_onnx_op(
         args=[
             "-c",
             # Parameters: $1=onnx_s3_key, $2=obs_dim, $3=action_dim, $4=output_file
+            # All user-supplied values are exported as env vars and read with
+            # os.environ inside the Python -c string to prevent shell injection.
             "set -euo pipefail\n"
             'ONNX_KEY=$(echo -n "$1"); OBS_DIM="$2"; ACT_DIM="$3"; OUTPUT_FILE="$4"\n'
             'ONNX_PATH="/tmp/policy.onnx"\n'
+            "export ONNX_KEY OBS_DIM ACT_DIM ONNX_PATH\n"
             "\n"
             'echo "=== ONNX Validation ==="\n'
             'echo "S3 key: ${ONNX_KEY}"\n'
             'echo "Expected obs_dim: ${OBS_DIM}, action_dim: ${ACT_DIM}"\n'
             "\n"
-            '/workspace/isaaclab/_isaac_sim/python.sh -c "\n'
+            "/workspace/isaaclab/_isaac_sim/python.sh -c '\n"
             "import boto3, os, sys\n"
-            "s3 = boto3.client('s3',\n"
-            "    endpoint_url=os.environ['S3_ENDPOINT'],\n"
-            "    aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],\n"
-            "    aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'])\n"
-            "s3.download_file('wbc-training', '${ONNX_KEY}', '${ONNX_PATH}')\n"
-            "print(f'Downloaded s3://wbc-training/${ONNX_KEY}')\n"
+            "import numpy as np\n"
+            'onnx_key = os.environ["ONNX_KEY"]\n'
+            'obs_dim = int(os.environ["OBS_DIM"])\n'
+            'act_dim = int(os.environ["ACT_DIM"])\n'
+            'onnx_path = os.environ["ONNX_PATH"]\n'
+            "\n"
+            's3 = boto3.client("s3",\n'
+            '    endpoint_url=os.environ["S3_ENDPOINT"],\n'
+            '    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],\n'
+            '    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])\n'
+            's3.download_file("wbc-training", onnx_key, onnx_path)\n'
+            'print(f"Downloaded s3://wbc-training/{onnx_key}")\n'
             "\n"
             "import onnx\n"
             "import onnxruntime as ort\n"
-            "import numpy as np\n"
             "\n"
-            "model = onnx.load('${ONNX_PATH}')\n"
+            "model = onnx.load(onnx_path)\n"
             "onnx.checker.check_model(model)\n"
             "\n"
             "inp = model.graph.input[0]\n"
             "out = model.graph.output[0]\n"
             "in_shape = [d.dim_value for d in inp.type.tensor_type.shape.dim]\n"
             "out_shape = [d.dim_value for d in out.type.tensor_type.shape.dim]\n"
-            "print(f'Input: name={inp.name!r}, shape={in_shape}')\n"
-            "print(f'Output: name={out.name!r}, shape={out_shape}')\n"
+            'print(f"Input: name={inp.name!r}, shape={in_shape}")\n'
+            'print(f"Output: name={out.name!r}, shape={out_shape}")\n'
             "\n"
-            "assert in_shape == [1, ${OBS_DIM}], f'Expected input [1, ${OBS_DIM}], got {in_shape}'\n"
-            "assert out_shape == [1, ${ACT_DIM}], f'Expected output [1, ${ACT_DIM}], got {out_shape}'\n"
+            'assert in_shape == [1, obs_dim], f"Expected input [1, {obs_dim}], got {in_shape}"\n'
+            'assert out_shape == [1, act_dim], f"Expected output [1, {act_dim}], got {out_shape}"\n'
             "\n"
-            "session = ort.InferenceSession('${ONNX_PATH}')\n"
-            "obs = np.random.randn(1, ${OBS_DIM}).astype(np.float32)\n"
+            "session = ort.InferenceSession(onnx_path)\n"
+            "obs = np.random.randn(1, obs_dim).astype(np.float32)\n"
             "actions = session.run(None, {inp.name: obs})[0]\n"
-            "assert actions.shape == (1, ${ACT_DIM}), f'ORT shape mismatch: {actions.shape}'\n"
-            "assert np.all(np.isfinite(actions)), 'Non-finite outputs detected'\n"
+            'assert actions.shape == (1, act_dim), f"ORT shape mismatch: {actions.shape}"\n'
+            'assert np.all(np.isfinite(actions)), "Non-finite outputs detected"\n'
             "\n"
             "actions2 = session.run(None, {inp.name: obs})[0]\n"
-            "assert np.array_equal(actions, actions2), 'Non-deterministic outputs'\n"
+            'assert np.array_equal(actions, actions2), "Non-deterministic outputs"\n'
             "\n"
             "op_types = {n.op_type for n in model.graph.node}\n"
-            "has_norm = bool(op_types & {'Sub', 'BatchNormalization', 'Div'})\n"
-            "print(f'Normalizer ops present: {has_norm}')\n"
+            'has_norm = bool(op_types & {"Sub", "BatchNormalization", "Div"})\n'
+            'print(f"Normalizer ops present: {has_norm}")\n'
             "if not has_norm:\n"
-            "    print('WARNING: No normalization ops found in ONNX graph')\n"
+            '    print("WARNING: No normalization ops found in ONNX graph")\n'
             "\n"
             "print()\n"
-            "print('=== ONNX Validation PASSED ===')\n"
-            "print(f'  Input: {in_shape}, Output: {out_shape}')\n"
-            "print(f'  Deterministic: yes')\n"
-            "norm_str = 'baked in' if has_norm else 'MISSING'\n"
-            "print(f'  Normalizer: {norm_str}')\n"
-            '"\n'
+            'print("=== ONNX Validation PASSED ===")\n'
+            'print(f"  Input: {in_shape}, Output: {out_shape}")\n'
+            'print(f"  Deterministic: yes")\n'
+            'norm_str = "baked in" if has_norm else "MISSING"\n'
+            'print(f"  Normalizer: {norm_str}")\n'
+            "'\n"
             "\n"
             'echo "PASSED" > "${OUTPUT_FILE}"\n'
             'echo "=== ONNX Validation COMPLETE ==="',
@@ -246,6 +182,51 @@ def validate_onnx_op(
     )
 
 
+@dsl.container_component
+def register_model_op(
+    model_name: str,
+    model_version: str,
+    onnx_s3_key: str,
+    s3_bucket: str,
+    registration_result: dsl.OutputPath(str),
+):
+    """Register validated ONNX model with RHOAI Model Registry."""
+    return dsl.ContainerSpec(
+        image=DEFAULT_IMAGE,
+        command=["/bin/bash"],
+        args=[
+            "-c",
+            # Parameters: $1=model_name, $2=model_version, $3=onnx_s3_key,
+            # $4=s3_bucket, $5=output_file
+            "set -euo pipefail\n"
+            'MODEL_NAME="$1"; MODEL_VERSION="$2"; ONNX_KEY="$3"\n'
+            'S3_BUCKET="$4"; OUTPUT_FILE="$5"\n'
+            'MODEL_URI="s3://${S3_BUCKET}/${ONNX_KEY}"\n'
+            "\n"
+            'echo "=== Model Registration ==="\n'
+            'echo "Model: ${MODEL_NAME} v${MODEL_VERSION}"\n'
+            'echo "URI: ${MODEL_URI}"\n'
+            'echo "Start time: $(date -u)"\n'
+            "\n"
+            "/workspace/isaaclab/_isaac_sim/python.sh -m wbc_pipeline.registry \\\n"
+            '  --name "${MODEL_NAME}" \\\n'
+            '  --uri "${MODEL_URI}" \\\n'
+            '  --version "${MODEL_VERSION}" \\\n'
+            '  --description "RSL-RL velocity-tracking policy for G1 29-DOF"\n'
+            "\n"
+            'echo "REGISTERED" > "${OUTPUT_FILE}"\n'
+            'echo "End time: $(date -u)"\n'
+            'echo "=== Model Registration: COMPLETE ==="',
+            "--",
+            model_name,
+            model_version,
+            onnx_s3_key,
+            s3_bucket,
+            registration_result,
+        ],
+    )
+
+
 @dsl.pipeline(name="wbc-training", description="G1 29-DOF WBC locomotion training pipeline")
 def wbc_training_pipeline(
     task: str = "WBC-Velocity-Flat-G1-29DOF-v0",
@@ -253,8 +234,11 @@ def wbc_training_pipeline(
     max_iterations: int = 6000,
     checkpoint_interval: int = 100,
     s3_prefix: str = "checkpoints",
+    s3_bucket: str = "wbc-training",
     expected_obs_dim: int = 103,
     expected_action_dim: int = 29,
+    model_name: str = "g1-wbc-flat-policy",
+    model_version: str = "v1",
 ):
     train_task = train_and_export_op(
         task=task,
@@ -273,6 +257,20 @@ def wbc_training_pipeline(
         expected_action_dim=expected_action_dim,
     )
     _configure_cpu_step(validate_task)
+    validate_task.set_caching_options(False)
+
+    register_task = register_model_op(
+        model_name=model_name,
+        model_version=model_version,
+        onnx_s3_key=train_task.outputs["onnx_s3_key"],
+        s3_bucket=s3_bucket,
+    )
+    register_task.after(validate_task)
+    _configure_cpu_step(register_task)
+    register_task.set_cpu_request("1")
+    register_task.set_memory_request("2Gi")
+    register_task.set_env_variable("MODEL_REGISTRY_ADDRESS", MODEL_REGISTRY_ADDRESS)
+    register_task.set_caching_options(False)
 
 
 if __name__ == "__main__":

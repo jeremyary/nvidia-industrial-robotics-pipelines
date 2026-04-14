@@ -87,15 +87,8 @@ class WBCRunner(OnPolicyRunner):
         signal.signal(signal.SIGTERM, self._sigterm_handler)
 
     def _init_s3(self):
-        import boto3
-
         s3_cfg = self._training_cfg.s3
-        self._s3_client = boto3.client(
-            "s3",
-            endpoint_url=s3_cfg.endpoint,
-            aws_access_key_id=s3_cfg.access_key,
-            aws_secret_access_key=s3_cfg.secret_key,
-        )
+        self._s3_client = s3_cfg.create_client()
         print(f"[WBCRunner] S3 checkpointing enabled: s3://{s3_cfg.bucket}/{s3_cfg.prefix}")
 
     def _prepare_logging_writer(self):
@@ -139,7 +132,7 @@ class WBCRunner(OnPolicyRunner):
         if isinstance(self.writer, _MlflowTensorboardWriter):
             self.writer.stop()
         print("[WBCRunner] Graceful shutdown complete.")
-        sys.exit(0)
+        sys.exit(143)
 
     def resume_from_s3(self, s3_key: str) -> dict:
         """Download a checkpoint from S3 and load it."""
@@ -159,11 +152,12 @@ class WBCRunner(OnPolicyRunner):
             return None
         s3_cfg = self._training_cfg.s3
         try:
-            response = self._s3_client.list_objects_v2(Bucket=s3_cfg.bucket, Prefix=s3_cfg.prefix + "/")
-            if "Contents" not in response:
-                print("[WBCRunner] No checkpoints found in S3.")
-                return None
-            model_files = [obj for obj in response["Contents"] if obj["Key"].endswith(".pt")]
+            model_files = []
+            paginator = self._s3_client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=s3_cfg.bucket, Prefix=s3_cfg.prefix + "/"):
+                for obj in page.get("Contents", []):
+                    if obj["Key"].endswith(".pt"):
+                        model_files.append(obj)
             if not model_files:
                 print("[WBCRunner] No .pt checkpoints found in S3.")
                 return None

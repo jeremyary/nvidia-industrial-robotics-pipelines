@@ -9,16 +9,12 @@ import os
 
 def check_s3() -> None:
     """Verify S3 checkpoints exist in the configured bucket."""
-    import boto3
+    from wbc_pipeline.config import S3Config
 
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=os.environ["S3_ENDPOINT"],
-        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-    )
-    bucket = os.environ.get("S3_BUCKET", "wbc-training")
-    prefix = os.environ.get("S3_PREFIX", "checkpoints")
+    cfg = S3Config()
+    s3 = cfg.create_client()
+    bucket = cfg.bucket
+    prefix = cfg.prefix
     resp = s3.list_objects_v2(Bucket=bucket, Prefix=f"{prefix}/")
     files = [obj["Key"] for obj in resp.get("Contents", [])]
     print(f"S3 checkpoints: {files}")
