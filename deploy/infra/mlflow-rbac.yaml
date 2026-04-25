@@ -1,23 +1,33 @@
+# This project was developed with assistance from AI tools.
+#
+# Grant the isaaclab-gpu SA access to the RHOAI MLflow tracking server.
+# MLflow uses kubernetes-auth (--app-name=kubernetes-auth) which validates
+# callers via SubjectAccessReview on mlflow.kubeflow.org resources.
+# Must be cluster-scoped — namespace-scoped Roles don't satisfy the SAR check.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: mlflow-training
-  namespace: wbc-training
+  name: wbc-training-mlflow
 rules:
-  - apiGroups: ["mlflow.opendatahub.io"]
-    resources: ["experiments"]
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["datasets", "experiments", "registeredmodels"]
     verbs: ["get", "list", "create", "update"]
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["gatewayendpoints"]
+    verbs: ["get", "list"]
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["gatewayendpoints/use"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
-  name: mlflow-training-binding
-  namespace: wbc-training
+  name: wbc-training-mlflow
 subjects:
   - kind: ServiceAccount
     name: isaaclab-gpu
     namespace: wbc-training
 roleRef:
-  kind: Role
-  name: mlflow-training
+  kind: ClusterRole
+  name: wbc-training-mlflow
   apiGroup: rbac.authorization.k8s.io

@@ -4,3 +4,4 @@ metadata:
   name: wbc-training
   labels:
     opendatahub.io/dashboard: "true"
+    kueue.openshift.io/managed: "true"

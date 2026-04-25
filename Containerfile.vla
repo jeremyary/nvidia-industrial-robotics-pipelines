@@ -1,0 +1,29 @@
+# This project was developed with assistance from AI tools.
+# VLA fine-tuning container: GR00T N1.7-3B on CUDA 12.8.
+# Downloads base model from S3, fine-tunes with torchrun, exports ONNX.
+FROM docker.io/nvidia/cuda:12.8.0-devel-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git python3.10 python3.10-dev python3-pip \
+    libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavdevice-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -s /usr/bin/python3 /usr/local/bin/python
+
+RUN pip install --no-cache-dir --upgrade pip
+
+ARG GROOT_REF=n1.7-release
+RUN git clone --depth 1 --branch ${GROOT_REF} \
+    https://github.com/NVIDIA/Isaac-GR00T.git /workspace/Isaac-GR00T
+WORKDIR /workspace/Isaac-GR00T
+RUN pip install --no-cache-dir torch==2.7.1 torchvision==0.22.1
+RUN pip install --no-cache-dir packaging ninja setuptools wheel psutil
+RUN pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation
+RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir torchcodec==0.4.0
+RUN pip install --no-cache-dir onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+
+COPY pyproject.toml /workspace/wbc_pipeline/
+COPY src/ /workspace/wbc_pipeline/src/
+RUN pip install --no-cache-dir -e "/workspace/wbc_pipeline[deploy]"
+
+USER 1001
