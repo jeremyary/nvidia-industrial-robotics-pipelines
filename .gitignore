@@ -21,6 +21,7 @@ build/
 # Training artifacts
 logs/
 checkpoints/
+videos/
 *.onnx
 *.pt
 *.zip
@@ -32,3 +33,9 @@ checkpoints/
 .DS_Store
 Thumbs.db
 .coverage
+
+node_modules/
+
+wbc_training_*.yaml
+
+jary.kubeconfig

@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: video-gallery
+  namespace: wbc-training
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: video-gallery
+  template:
+    metadata:
+      labels:
+        app: video-gallery
+    spec:
+      containers:
+        - name: gallery
+          image: quay.io/jary/wbc-gallery:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: S3_ENDPOINT
+              value: "http://minio.wbc-training.svc:9000"
+            - name: S3_BUCKET
+              value: "wbc-training"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: video-gallery
+  namespace: wbc-training
+spec:
+  selector:
+    app: video-gallery
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: video-gallery
+  namespace: wbc-training
+spec:
+  to:
+    kind: Service
+    name: video-gallery
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

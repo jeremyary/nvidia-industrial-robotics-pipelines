@@ -1,114 +1,87 @@
 # This project was developed with assistance from AI tools.
-"""Tests for SONIC KFP v2 pipeline compilation and structure."""
+"""Tests for SONIC import pipeline compilation and structure."""
 
 from __future__ import annotations
 
 from pipeline_test_utils import compile_pipeline, compile_pipeline_full_yaml
 
-from wbc_pipeline.sonic.pipeline import sonic_training_pipeline
+from wbc_pipeline.sonic.pipeline import sonic_import_pipeline
 
 
 def _compile_pipeline() -> dict:
-    return compile_pipeline(sonic_training_pipeline)
+    return compile_pipeline(sonic_import_pipeline)
 
 
 def _compile_pipeline_full_yaml() -> str:
-    return compile_pipeline_full_yaml(sonic_training_pipeline)
+    return compile_pipeline_full_yaml(sonic_import_pipeline)
 
 
 class TestPipelineCompilation:
-    """Validate SONIC pipeline compiles and has correct structure."""
+    """Validate import pipeline compiles and has correct structure."""
 
     def test_compiles_to_valid_yaml(self):
         """Pipeline compiles without errors."""
         spec = _compile_pipeline()
         assert "root" in spec
 
-    def test_has_five_tasks(self):
-        """Pipeline contains data prep, train, export, validate, and register tasks."""
+    def test_has_three_tasks(self):
+        """Pipeline contains fetch, validate, and register tasks."""
         spec = _compile_pipeline()
         tasks = spec["root"]["dag"]["tasks"]
-        assert len(tasks) == 5
-        assert "sonic-prepare-data-op" in tasks
-        assert "sonic-train-op" in tasks
-        assert "sonic-export-onnx-op" in tasks
-        assert "sonic-validate-onnx-op" in tasks
-        assert "sonic-register-model-op" in tasks
+        assert len(tasks) == 3
+        assert "sonic-fetch-checkpoint-op" in tasks
+        assert "sonic-validate-checkpoint-op" in tasks
+        assert "sonic-register-checkpoint-op" in tasks
 
-    def test_train_depends_on_data_prep(self):
-        """Train task depends on data prep output."""
+    def test_validate_depends_on_fetch(self):
+        """Validate task depends on fetch output."""
         spec = _compile_pipeline()
-        train = spec["root"]["dag"]["tasks"]["sonic-train-op"]
-        assert "sonic-prepare-data-op" in train.get("dependentTasks", [])
-
-    def test_export_depends_on_train(self):
-        """Export task depends on train output."""
-        spec = _compile_pipeline()
-        export = spec["root"]["dag"]["tasks"]["sonic-export-onnx-op"]
-        assert "sonic-train-op" in export.get("dependentTasks", [])
-
-    def test_validate_depends_on_export(self):
-        """Validate task depends on export task."""
-        spec = _compile_pipeline()
-        validate = spec["root"]["dag"]["tasks"]["sonic-validate-onnx-op"]
-        deps = validate.get("dependentTasks", [])
-        assert "sonic-export-onnx-op" in deps
+        validate = spec["root"]["dag"]["tasks"]["sonic-validate-checkpoint-op"]
+        assert "sonic-fetch-checkpoint-op" in validate.get("dependentTasks", [])
 
     def test_register_depends_on_validate(self):
         """Register task depends on validate task."""
         spec = _compile_pipeline()
-        register = spec["root"]["dag"]["tasks"]["sonic-register-model-op"]
+        register = spec["root"]["dag"]["tasks"]["sonic-register-checkpoint-op"]
         deps = register.get("dependentTasks", [])
-        assert "sonic-validate-onnx-op" in deps
+        assert "sonic-validate-checkpoint-op" in deps
 
 
 class TestPipelineParameters:
     """Validate pipeline parameter defaults."""
 
-    def test_default_num_gpus(self):
-        """Default num_gpus is 4."""
+    def test_default_hf_repo_id(self):
+        """Default HuggingFace repo is nvidia/GEAR-SONIC."""
         spec = _compile_pipeline()
         params = spec["root"]["inputDefinitions"]["parameters"]
-        assert params["num_gpus"]["defaultValue"] == 4.0
+        assert params["hf_repo_id"]["defaultValue"] == "nvidia/GEAR-SONIC"
 
-    def test_default_num_envs(self):
-        """Default num_envs is 4096."""
+    def test_default_s3_prefix(self):
+        """Default S3 prefix is gear-sonic."""
         spec = _compile_pipeline()
         params = spec["root"]["inputDefinitions"]["parameters"]
-        assert params["num_envs"]["defaultValue"] == 4096.0
+        assert params["s3_prefix"]["defaultValue"] == "gear-sonic"
 
-    def test_default_max_iterations(self):
-        """Default max_iterations is 10000."""
+    def test_default_model_name(self):
+        """Default model name is g1-sonic-wbc."""
         spec = _compile_pipeline()
         params = spec["root"]["inputDefinitions"]["parameters"]
-        assert params["max_iterations"]["defaultValue"] == 10000.0
+        assert params["model_name"]["defaultValue"] == "g1-sonic-wbc"
 
-    def test_default_data_prefix(self):
-        """Default s3_data_prefix is bones-seed/processed."""
+    def test_default_model_version(self):
+        """Default model version is v1."""
         spec = _compile_pipeline()
         params = spec["root"]["inputDefinitions"]["parameters"]
-        assert params["s3_data_prefix"]["defaultValue"] == "bones-seed/processed"
-
-    def test_default_checkpoint_prefix(self):
-        """Default s3_checkpoint_prefix is sonic-checkpoints."""
-        spec = _compile_pipeline()
-        params = spec["root"]["inputDefinitions"]["parameters"]
-        assert params["s3_checkpoint_prefix"]["defaultValue"] == "sonic-checkpoints"
-
-    def test_default_hydra_experiment(self):
-        """Default hydra_experiment is sonic_release."""
-        spec = _compile_pipeline()
-        params = spec["root"]["inputDefinitions"]["parameters"]
-        assert params["hydra_experiment"]["defaultValue"] == "sonic_release"
+        assert params["model_version"]["defaultValue"] == "v1"
 
 
-class TestGPUConfiguration:
-    """Validate GPU and resource configuration in compiled YAML."""
+class TestImportConfiguration:
+    """Validate resource and secret configuration in compiled YAML."""
 
-    def test_gpu_in_compiled_yaml(self):
-        """Compiled YAML references nvidia.com/gpu."""
+    def test_no_gpu_referenced(self):
+        """Import pipeline should not request GPUs."""
         yaml_str = _compile_pipeline_full_yaml()
-        assert "nvidia.com/gpu" in yaml_str
+        assert "nvidia.com/gpu" not in yaml_str
 
     def test_minio_secret_referenced(self):
         """Compiled YAML references the minio-credentials secret."""
@@ -116,37 +89,30 @@ class TestGPUConfiguration:
         assert "minio-credentials" in yaml_str
 
     def test_hf_credentials_secret_referenced(self):
-        """Compiled YAML references the hf-credentials secret."""
+        """Compiled YAML references the hf-credentials secret for fetch step."""
         yaml_str = _compile_pipeline_full_yaml()
         assert "hf-credentials" in yaml_str
 
-    def test_toleration_referenced(self):
-        """Compiled YAML contains GPU toleration."""
+    def test_model_registry_env_var(self):
+        """Compiled YAML contains MODEL_REGISTRY_ADDRESS."""
         yaml_str = _compile_pipeline_full_yaml()
-        assert "NoSchedule" in yaml_str
-
-    def test_env_vars_in_compiled_yaml(self):
-        """Compiled YAML contains required environment variables."""
-        yaml_str = _compile_pipeline_full_yaml()
-        assert "ACCEPT_EULA" in yaml_str
-        assert "S3_ENDPOINT" in yaml_str
-        assert "MLFLOW_TRACKING_URI" in yaml_str
+        assert "MODEL_REGISTRY_ADDRESS" in yaml_str
 
     def test_sonic_image_referenced(self):
         """Compiled YAML uses the SONIC container image."""
         yaml_str = _compile_pipeline_full_yaml()
-        assert "isaaclab-g1-sonic" in yaml_str
+        assert "wbc-sonic" in yaml_str
 
-    def test_caching_disabled_for_train(self):
-        """Train task has caching disabled."""
+    def test_caching_disabled_for_all_steps(self):
+        """All steps have caching disabled."""
         spec = _compile_pipeline()
-        train = spec["root"]["dag"]["tasks"]["sonic-train-op"]
-        caching = train.get("cachingOptions", {})
-        assert caching.get("enableCache") is not True
+        tasks = spec["root"]["dag"]["tasks"]
+        for task_name, task_spec in tasks.items():
+            caching = task_spec.get("cachingOptions", {})
+            assert caching.get("enableCache") is not True, f"{task_name} has caching enabled"
 
-    def test_caching_disabled_for_data_prep(self):
-        """Data prep task has caching disabled (uses its own S3 manifest caching)."""
-        spec = _compile_pipeline()
-        data = spec["root"]["dag"]["tasks"]["sonic-prepare-data-op"]
-        caching = data.get("cachingOptions", {})
-        assert caching.get("enableCache") is not True
+    def test_uses_python_not_isaac_sim(self):
+        """Import pipeline uses plain python, not Isaac Sim python.sh."""
+        yaml_str = _compile_pipeline_full_yaml()
+        assert "python.sh" not in yaml_str
+        assert "python -m wbc_pipeline" in yaml_str

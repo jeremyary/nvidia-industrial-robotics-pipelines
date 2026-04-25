@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from wbc_pipeline.config import MLflowConfig, S3Config, TrainingConfig
+from wbc_pipeline.config import MLflowConfig, S3Config, TrainingConfig, VideoConfig
 
 
 class TestS3Config:
@@ -75,6 +75,45 @@ class TestMLflowConfig:
         assert cfg.experiment_name == "my-experiment"
 
 
+class TestVideoConfig:
+    """Validate video recording config."""
+
+    def test_disabled_by_default(self):
+        """Video is disabled without VIDEO_ENABLED env var."""
+        cfg = VideoConfig()
+        assert cfg.enabled is False
+
+    def test_enabled_with_env_var(self, monkeypatch):
+        """Video is enabled when VIDEO_ENABLED=true."""
+        monkeypatch.setenv("VIDEO_ENABLED", "true")
+        cfg = VideoConfig()
+        assert cfg.enabled is True
+
+    def test_enabled_with_1(self, monkeypatch):
+        """VIDEO_ENABLED=1 also works."""
+        monkeypatch.setenv("VIDEO_ENABLED", "1")
+        cfg = VideoConfig()
+        assert cfg.enabled is True
+
+    def test_default_num_recordings(self):
+        """Default is 10 recordings."""
+        cfg = VideoConfig()
+        assert cfg.num_recordings == 10
+
+    def test_default_steps_per_video(self):
+        """Default is 200 steps per video."""
+        cfg = VideoConfig()
+        assert cfg.steps_per_video == 200
+
+    def test_from_env_vars(self, monkeypatch):
+        """Config reads from environment variables."""
+        monkeypatch.setenv("VIDEO_NUM_RECORDINGS", "5")
+        monkeypatch.setenv("VIDEO_STEPS", "300")
+        cfg = VideoConfig()
+        assert cfg.num_recordings == 5
+        assert cfg.steps_per_video == 300
+
+
 class TestTrainingConfig:
     """Validate top-level training config."""
 
@@ -94,3 +133,8 @@ class TestTrainingConfig:
         cfg = TrainingConfig()
         assert cfg.s3.enabled is False
         assert cfg.mlflow.enabled is False
+
+    def test_video_disabled_by_default(self):
+        """Video recording is disabled without env vars."""
+        cfg = TrainingConfig()
+        assert cfg.video.enabled is False

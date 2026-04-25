@@ -1,10 +1,12 @@
 # This project was developed with assistance from AI tools.
-"""Tests for SONIC training configuration."""
+"""Tests for SONIC configuration."""
 
 from __future__ import annotations
 
 import os
 from unittest import mock
+
+import pytest
 
 from wbc_pipeline.sonic.config import SonicMLflowConfig, SonicS3Config, SonicTrainingConfig
 
@@ -42,6 +44,13 @@ class TestSonicS3Config:
         assert cfg.checkpoint_prefix == "custom/ckpt"
         assert cfg.bucket == "my-bucket"
 
+    def test_path_traversal_rejected(self):
+        """S3 prefix with path traversal is rejected."""
+        env = {"S3_CHECKPOINT_PREFIX": "../../evil"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with pytest.raises(ValueError, match="must not contain"):
+                SonicS3Config()
+
 
 class TestSonicMLflowConfig:
     """Validate SONIC MLflow configuration."""
@@ -73,34 +82,13 @@ class TestSonicMLflowConfig:
 
 
 class TestSonicTrainingConfig:
-    """Validate top-level SONIC training configuration."""
+    """Validate top-level SONIC configuration."""
 
     def test_defaults(self):
-        """Training config has expected defaults."""
+        """Config has expected defaults after pivot to import-only."""
         with mock.patch.dict(os.environ, {}, clear=True):
             cfg = SonicTrainingConfig()
-        assert cfg.num_gpus == 4
-        assert cfg.num_envs == 4096
-        assert cfg.max_iterations == 10000
-        assert cfg.hydra_experiment == "sonic_release"
-        assert cfg.checkpoint_interval == 100
-
-    def test_env_overrides(self):
-        """Env vars override training defaults."""
-        env = {
-            "SONIC_NUM_GPUS": "2",
-            "SONIC_NUM_ENVS": "512",
-            "SONIC_MAX_ITERATIONS": "100",
-            "SONIC_HYDRA_EXPERIMENT": "sonic_bones_seed",
-            "CHECKPOINT_INTERVAL": "50",
-        }
-        with mock.patch.dict(os.environ, env, clear=True):
-            cfg = SonicTrainingConfig()
-        assert cfg.num_gpus == 2
-        assert cfg.num_envs == 512
-        assert cfg.max_iterations == 100
-        assert cfg.hydra_experiment == "sonic_bones_seed"
-        assert cfg.checkpoint_interval == 50
+        assert cfg.hf_token == ""
 
     def test_hf_token_from_env(self):
         """HF_TOKEN is read from environment."""

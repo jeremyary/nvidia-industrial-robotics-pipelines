@@ -94,6 +94,7 @@ spec:
     host: wbc-model-registry-postgres
     port: 5432
     database: wbc_model_registry
+    # Fixed convention — must match MODEL_REGISTRY_DB_USER in Makefile/.env
     username: mlmduser
     passwordSecret:
       name: wbc-model-registry-db

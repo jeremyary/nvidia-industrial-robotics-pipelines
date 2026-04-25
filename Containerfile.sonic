@@ -1,117 +1,12 @@
-# SONIC training container for G1 29-DOF whole-body control
-#
-# Extends the isaaclab-base stage from Containerfile with GEAR-SONIC
-# (GR00T-WholeBodyControl) and its training dependencies.
-#
-# Build (requires isaaclab-base from Containerfile to be cached or built first):
-#   podman build --target isaaclab-base -t quay.io/jary/isaaclab-base:latest -f Containerfile .
-#   podman build -t quay.io/jary/isaaclab-g1-sonic:latest -f Containerfile.sonic .
-#
-# Or build in one shot (multi-stage resolves automatically):
-#   podman build -t quay.io/jary/isaaclab-g1-sonic:latest -f Containerfile.sonic .
+# This project was developed with assistance from AI tools.
+# Lightweight container for SONIC checkpoint import pipeline.
+# Pulls pre-trained ONNX models from HuggingFace, validates, and registers.
+FROM python:3.12-slim
 
-# ==============================================================================
-# Stage 1: isaaclab-base — reuse from main Containerfile
-# ==============================================================================
+WORKDIR /app
+COPY pyproject.toml .
+COPY src/ src/
 
-ARG ISAACSIM_VERSION=5.1.0
-FROM nvcr.io/nvidia/isaac-sim:${ISAACSIM_VERSION} AS isaaclab-base
+RUN pip install --no-cache-dir ".[deploy]"
 
-SHELL ["/bin/bash", "-c"]
-
-LABEL description="Isaac Lab G1 WBC RL training container"
-
-ENV ISAACSIM_ROOT_PATH=/isaac-sim
-ENV ISAACLAB_PATH=/workspace/isaaclab
-ENV ACCEPT_EULA=Y
-ENV LANG=C.UTF-8
-ENV PYTHONUNBUFFERED=1
-ENV DEBIAN_FRONTEND=noninteractive
-
-USER root
-
-RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    git \
-    libglib2.0-0 \
-    ncurses-term \
-    wget && \
-    apt -y autoremove && apt clean autoclean && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN git clone --depth 1 --branch v2.3.2 \
-    https://github.com/isaac-sim/IsaacLab.git ${ISAACLAB_PATH}
-
-RUN ln -sf ${ISAACSIM_ROOT_PATH} ${ISAACLAB_PATH}/_isaac_sim && \
-    chmod +x ${ISAACLAB_PATH}/isaaclab.sh
-
-RUN ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install toml && \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install --no-build-isolation "flatdict==4.0.1"
-
-RUN --mount=type=cache,target=/var/cache/apt \
-    ${ISAACLAB_PATH}/isaaclab.sh -p ${ISAACLAB_PATH}/tools/install_deps.py apt ${ISAACLAB_PATH}/source && \
-    apt -y autoremove && apt clean autoclean && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p ${ISAACSIM_ROOT_PATH}/kit/cache \
-    /root/.cache/ov /root/.cache/pip \
-    /root/.cache/nvidia/GLCache /root/.nv/ComputeCache \
-    /root/.nvidia-omniverse/logs /root/.local/share/ov/data \
-    /root/Documents
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    ${ISAACLAB_PATH}/isaaclab.sh --install rsl_rl
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install \
-    "mlflow>=2.15.0,<3.0" \
-    "boto3>=1.34.0,<2.0" \
-    "onnx>=1.16.0,<2.0" \
-    "onnxruntime>=1.18.0,<2.0"
-
-# ==============================================================================
-# Stage 2: sonic — GEAR-SONIC training stack
-# ==============================================================================
-
-FROM isaaclab-base AS sonic
-
-# Pin to a specific commit SHA for reproducible builds.
-# Override at build time with: --build-arg SONIC_COMMIT=<sha>
-ARG SONIC_COMMIT=main
-
-# Clone GR00T-WholeBodyControl at the pinned commit (shallow fetch)
-RUN git init /workspace/sonic && \
-    cd /workspace/sonic && \
-    git remote add origin https://github.com/NVlabs/GR00T-WholeBodyControl.git && \
-    git fetch --depth 1 origin ${SONIC_COMMIT} && \
-    git checkout FETCH_HEAD
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e "/workspace/sonic/gear_sonic[training]"
-
-# Install huggingface-cli for BONES-SEED dataset download
-RUN --mount=type=cache,target=/root/.cache/pip \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install "huggingface-hub>=0.23.0,<1.0"
-
-# ==============================================================================
-# Stage 3: runtime — wbc_pipeline source code
-# ==============================================================================
-
-FROM sonic AS runtime
-
-COPY src/ /workspace/wbc_pipeline/src/
-COPY pyproject.toml /workspace/wbc_pipeline/
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e /workspace/wbc_pipeline
-
-RUN echo "export ISAACLAB_PATH=${ISAACLAB_PATH}" >> /root/.bashrc && \
-    echo "alias isaaclab=${ISAACLAB_PATH}/isaaclab.sh" >> /root/.bashrc && \
-    echo "alias python=${ISAACLAB_PATH}/_isaac_sim/python.sh" >> /root/.bashrc && \
-    echo "alias pip='${ISAACLAB_PATH}/_isaac_sim/python.sh -m pip'" >> /root/.bashrc
-
-WORKDIR ${ISAACLAB_PATH}
-
-ENTRYPOINT ["/workspace/isaaclab/isaaclab.sh", "-p"]
+USER 1001

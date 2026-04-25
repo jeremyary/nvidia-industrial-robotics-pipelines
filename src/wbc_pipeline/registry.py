@@ -34,6 +34,7 @@ def register_model(
     description: str | None = None,
     author: str = "wbc-pipeline",
     metadata: dict | None = None,
+    onnx_files: list[str] | None = None,
 ) -> str:
     """Register a model with the RHOAI Model Registry. Returns the model version ID."""
     from model_registry import ModelRegistry
@@ -53,6 +54,10 @@ def register_model(
     print(f"  URI: {uri}")
     print(f"  Format: {model_format_name} v{model_format_version}")
 
+    combined_metadata = dict(metadata or {})
+    if onnx_files:
+        combined_metadata["onnx_files"] = ",".join(onnx_files)
+
     registered_model = registry.register_model(
         name=name,
         uri=uri,
@@ -60,7 +65,7 @@ def register_model(
         model_format_name=model_format_name,
         model_format_version=model_format_version,
         version_description=description,
-        metadata=metadata or {},
+        metadata=combined_metadata,
     )
 
     print(f"  Registered: {registered_model.name} (id={registered_model.id})")
