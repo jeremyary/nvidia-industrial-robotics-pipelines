@@ -26,15 +26,25 @@ ARG GROOT_REF=n1.7-release
 RUN git clone --depth 1 --branch ${GROOT_REF} \
     https://github.com/NVIDIA/Isaac-GR00T.git /workspace/Isaac-GR00T
 WORKDIR /workspace/Isaac-GR00T
-# NGC ships torch/torchvision pre-release builds; relax GR00T's exact pins
-RUN sed -i -E 's/(torch(vision|audio)?)==[0-9]+\.[0-9]+\.[0-9]+/\1>=0.0.0/g' pyproject.toml && \
-    grep -n torch pyproject.toml
 RUN pip install --no-cache-dir packaging ninja setuptools wheel psutil
 ENV CUDA_HOME=/usr/local/cuda
 RUN pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation || \
     echo "WARNING: flash-attn build failed, using PyTorch SDPA fallback"
-RUN pip install --no-cache-dir -e .
-RUN pip install --no-cache-dir torchcodec==0.4.0
+# Install GR00T without dependency resolution — NGC already provides torch, scipy, numpy, etc.
+RUN pip install --no-cache-dir --no-deps -e .
+# Install GR00T deps that NGC does not provide (aarch64-aware versions)
+RUN pip install --no-cache-dir \
+    albumentations==1.4.18 diffusers==0.35.1 peft==0.17.1 \
+    transformers==4.57.3 datasets==3.6.0 lmdb==1.7.5 \
+    msgpack-numpy==0.4.8 termcolor==3.2.0 tyro==0.9.17 \
+    omegaconf==2.3.0 gymnasium==1.2.2 gitpython==3.1.46 \
+    jsonlines==4.0.0 cryptography==42.0.8 wandb==0.23.0 \
+    pyzmq==27.0.1 triton==3.3.1 onnx>=1.20.0 \
+    opencv-python-headless av==16.1.0 "huggingface-hub[cli]"
+RUN pip install --no-cache-dir torchcodec==0.10.0a0 || \
+    echo "WARNING: torchcodec 0.10.0a0 unavailable, skipping"
+RUN pip install --no-cache-dir "tensorrt-cu13>=10.15.1.29" || \
+    echo "WARNING: tensorrt-cu13 unavailable, ONNX-TRT export may not work"
 RUN pip install --no-cache-dir onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
 
 COPY pyproject.toml /workspace/wbc_pipeline/
