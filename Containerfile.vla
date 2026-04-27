@@ -33,15 +33,12 @@ RUN pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation || \
 # Install GR00T without dependency resolution — NGC already provides torch, scipy, numpy, etc.
 # GR00T pins requires-python==3.10.* but works on 3.12; NGC 25.04 ships 3.12
 RUN pip install --no-cache-dir --no-deps --ignore-requires-python -e .
-# Install GR00T deps that NGC does not provide (aarch64-aware versions)
+# Install GR00T deps that NGC does not provide (no version pins — let pip resolve against NGC)
 RUN pip install --no-cache-dir \
-    albumentations==1.4.18 diffusers==0.35.1 peft==0.17.1 \
-    transformers==4.57.3 datasets==3.6.0 lmdb==1.7.5 \
-    msgpack-numpy==0.4.8 termcolor==3.2.0 tyro==0.9.17 \
-    omegaconf==2.3.0 gymnasium==1.2.2 gitpython==3.1.46 \
-    jsonlines==4.0.0 cryptography==42.0.8 wandb==0.23.0 \
-    pyzmq==27.0.1 triton==3.3.1 onnx>=1.20.0 \
-    opencv-python-headless av==16.1.0 "huggingface-hub[cli]"
+    albumentations diffusers peft transformers datasets lmdb \
+    msgpack-numpy termcolor tyro omegaconf gymnasium gitpython \
+    jsonlines wandb onnx>=1.20.0 \
+    opencv-python-headless av "huggingface-hub[cli]"
 RUN pip install --no-cache-dir torchcodec==0.10.0a0 || \
     echo "WARNING: torchcodec 0.10.0a0 unavailable, skipping"
 RUN pip install --no-cache-dir "tensorrt-cu13>=10.15.1.29" || \
