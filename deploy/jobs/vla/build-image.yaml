@@ -1,0 +1,85 @@
+# This project was developed with assistance from AI tools.
+# Build the VLA container image natively on an arm64 cluster node.
+# Requires: quay-credentials secret with .dockerconfigjson for quay.io push.
+# Usage:
+#   oc create secret docker-registry quay-credentials -n wbc-training \
+#     --docker-server=quay.io --docker-username=<user> --docker-password=<token>
+#   oc apply -f deploy/jobs/vla/build-image.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vla-build-image
+  namespace: wbc-training
+  labels:
+    pipeline.wbc/component: vla
+    pipeline.wbc/phase: build
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        pipeline.wbc/component: vla
+        pipeline.wbc/phase: build
+    spec:
+      restartPolicy: Never
+      serviceAccountName: vla-builder
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      volumes:
+        - name: quay-auth
+          secret:
+            secretName: quay-credentials
+        - name: build-storage
+          emptyDir:
+            sizeLimit: 80Gi
+      containers:
+        - name: buildah
+          image: quay.io/buildah/stable:latest
+          securityContext:
+            privileged: true
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              export STORAGE_DRIVER=vfs
+
+              echo "=== Clone repo ==="
+              dnf install -y git
+              git clone --depth 1 --branch main \
+                https://github.com/jeremyary/nvidia-industrial-wbc-pipeline.git /build/repo
+              cd /build/repo
+
+              echo "=== Build image ==="
+              buildah bud --format docker \
+                --storage-driver vfs \
+                -t quay.io/jary/wbc-vla:v1-arm64 \
+                -f Containerfile.vla .
+
+              echo "=== Push to quay.io ==="
+              buildah push --storage-driver vfs \
+                --authfile /auth/.dockerconfigjson \
+                quay.io/jary/wbc-vla:v1-arm64
+
+              echo "=== Build complete ==="
+          volumeMounts:
+            - name: quay-auth
+              mountPath: /auth
+              readOnly: true
+            - name: build-storage
+              mountPath: /build
+          resources:
+            requests:
+              cpu: "8"
+              memory: 32Gi
+            limits:
+              memory: 64Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vla-builder
+  namespace: wbc-training
