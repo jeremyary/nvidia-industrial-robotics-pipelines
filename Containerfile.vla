@@ -26,6 +26,8 @@ ARG GROOT_REF=n1.7-release
 RUN git clone --depth 1 --branch ${GROOT_REF} \
     https://github.com/NVIDIA/Isaac-GR00T.git /workspace/Isaac-GR00T
 WORKDIR /workspace/Isaac-GR00T
+# NGC ships torch 2.7.0a0 (NVIDIA build); GR00T pins 2.7.1 exactly — relax to >=2.7
+RUN sed -i 's/"torch==2\.7\.1"/"torch>=2.7.0"/' pyproject.toml
 RUN pip install --no-cache-dir packaging ninja setuptools wheel psutil
 ENV CUDA_HOME=/usr/local/cuda
 RUN pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation || \
