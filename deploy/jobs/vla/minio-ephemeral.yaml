@@ -99,6 +99,9 @@ spec:
               mc mb local/mlflow --ignore-existing &&
               echo "Buckets:" &&
               mc ls local/
+          env:
+            - name: HOME
+              value: /tmp
           envFrom:
             - secretRef:
                 name: minio-credentials
