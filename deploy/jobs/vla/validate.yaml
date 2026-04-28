@@ -20,8 +20,6 @@ spec:
         pipeline.wbc/phase: validate
     spec:
       restartPolicy: OnFailure
-      securityContext:
-        runAsUser: 1001
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
