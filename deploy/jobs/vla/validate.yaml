@@ -28,7 +28,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: validate
-          image: quay.io/jary/wbc-vla:latest
+          image: quay.io/jary/wbc-vla:v1-arm64
           imagePullPolicy: Always
           command:
             - python

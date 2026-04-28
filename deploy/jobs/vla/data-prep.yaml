@@ -27,7 +27,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: data-prep
-          image: quay.io/jary/wbc-vla:latest
+          image: quay.io/jary/wbc-vla:v1-arm64
           imagePullPolicy: Always
           command: ["python", "-m", "wbc_pipeline.vla.data_prep"]
           env:
