@@ -43,7 +43,9 @@ RUN pip install --no-cache-dir torchcodec==0.10.0a0 || \
     echo "WARNING: torchcodec 0.10.0a0 unavailable, skipping"
 RUN pip install --no-cache-dir "tensorrt-cu13>=10.15.1.29" || \
     echo "WARNING: tensorrt-cu13 unavailable, ONNX-TRT export may not work"
-RUN pip install --no-cache-dir onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+RUN pip install --no-cache-dir onnxruntime-gpu --extra-index-url \
+    https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ || \
+    pip install --no-cache-dir onnxruntime
 
 COPY pyproject.toml /workspace/wbc_pipeline/
 COPY src/ /workspace/wbc_pipeline/src/
