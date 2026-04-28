@@ -107,9 +107,10 @@ pipeline-deploy:
 deploy-bare-infra:
 	oc apply -f deploy/infra/namespace.yaml
 	oc project $(NAMESPACE)
-	oc apply -f deploy/infra/minio.yaml
 	oc delete job minio-init -n $(NAMESPACE) --ignore-not-found
-	oc apply -f deploy/infra/minio-init.yaml
+	oc apply -f deploy/jobs/vla/minio-ephemeral.yaml
+	@echo "Waiting for MinIO to be ready..."
+	oc wait --for=condition=available deployment/minio -n $(NAMESPACE) --timeout=120s
 	oc wait --for=condition=complete job/minio-init -n $(NAMESPACE) --timeout=120s
 ifdef HF_TOKEN
 	oc create secret generic hf-credentials -n $(NAMESPACE) \
@@ -117,7 +118,7 @@ ifdef HF_TOKEN
 		--dry-run=client -o yaml | oc apply -f -
 	@echo "HF credentials secret created/updated."
 endif
-	@echo "Bare infra deployed (MinIO + secrets). No RHOAI/DSPA/Kueue."
+	@echo "Bare infra deployed (ephemeral MinIO). No RHOAI/DSPA/Kueue."
 
 vla-job-data-prep:
 	oc delete job vla-data-prep -n $(NAMESPACE) --ignore-not-found
