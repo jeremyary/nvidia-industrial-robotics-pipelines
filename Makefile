@@ -123,25 +123,28 @@ endif
 vla-job-data-prep:
 	oc delete job vla-data-prep -n $(NAMESPACE) --ignore-not-found
 	oc apply -f deploy/jobs/vla/data-prep.yaml
-	@echo "Waiting for pod to schedule..."
+	@echo "Waiting for pod to start..."
 	@while [ -z "$$(oc get pods -l job-name=vla-data-prep -n $(NAMESPACE) -o name 2>/dev/null)" ]; do sleep 2; done
-	oc logs -f job/vla-data-prep -n $(NAMESPACE)
+	@while [ "$$(oc get pods -l job-name=vla-data-prep -n $(NAMESPACE) -o jsonpath='{.items[0].status.phase}')" = "Pending" ]; do sleep 3; done
+	oc logs -f job/vla-data-prep -n $(NAMESPACE) || true
 	oc wait --for=condition=complete job/vla-data-prep -n $(NAMESPACE) --timeout=1800s
 
 vla-job-fine-tune:
 	oc delete job vla-fine-tune -n $(NAMESPACE) --ignore-not-found
 	oc apply -f deploy/jobs/vla/fine-tune.yaml
-	@echo "Waiting for pod to schedule..."
+	@echo "Waiting for pod to start..."
 	@while [ -z "$$(oc get pods -l job-name=vla-fine-tune -n $(NAMESPACE) -o name 2>/dev/null)" ]; do sleep 2; done
-	oc logs -f job/vla-fine-tune -n $(NAMESPACE)
+	@while [ "$$(oc get pods -l job-name=vla-fine-tune -n $(NAMESPACE) -o jsonpath='{.items[0].status.phase}')" = "Pending" ]; do sleep 3; done
+	oc logs -f job/vla-fine-tune -n $(NAMESPACE) || true
 	oc wait --for=condition=complete job/vla-fine-tune -n $(NAMESPACE) --timeout=7200s
 
 vla-job-validate:
 	oc delete job vla-validate -n $(NAMESPACE) --ignore-not-found
 	oc apply -f deploy/jobs/vla/validate.yaml
-	@echo "Waiting for pod to schedule..."
+	@echo "Waiting for pod to start..."
 	@while [ -z "$$(oc get pods -l job-name=vla-validate -n $(NAMESPACE) -o name 2>/dev/null)" ]; do sleep 2; done
-	oc logs -f job/vla-validate -n $(NAMESPACE)
+	@while [ "$$(oc get pods -l job-name=vla-validate -n $(NAMESPACE) -o jsonpath='{.items[0].status.phase}')" = "Pending" ]; do sleep 3; done
+	oc logs -f job/vla-validate -n $(NAMESPACE) || true
 	oc wait --for=condition=complete job/vla-validate -n $(NAMESPACE) --timeout=1800s
 
 vla-job-run: vla-job-data-prep vla-job-fine-tune vla-job-validate
