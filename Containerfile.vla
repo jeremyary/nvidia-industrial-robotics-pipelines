@@ -38,7 +38,7 @@ RUN pip install --no-cache-dir \
     albumentations diffusers peft transformers datasets lmdb \
     msgpack-numpy termcolor tyro omegaconf gymnasium gitpython \
     jsonlines wandb onnx>=1.20.0 \
-    opencv-python-headless av "huggingface-hub[cli]"
+    opencv-python-headless av "huggingface-hub[cli]<1.0"
 RUN pip install --no-cache-dir torchcodec==0.10.0a0 || \
     echo "WARNING: torchcodec 0.10.0a0 unavailable, skipping"
 RUN pip install --no-cache-dir "tensorrt-cu13>=10.15.1.29" || \
