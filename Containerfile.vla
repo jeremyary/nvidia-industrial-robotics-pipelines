@@ -40,7 +40,10 @@ RUN pip install --no-cache-dir \
     jsonlines wandb onnx>=1.20.0 \
     opencv-python-headless av "huggingface-hub[cli]<1.0"
 RUN pip install --no-cache-dir torchcodec==0.10.0a0 || \
-    echo "WARNING: torchcodec 0.10.0a0 unavailable, skipping"
+    echo "WARNING: torchcodec 0.10.0a0 unavailable, falling back to pyav"
+# torchcodec has no aarch64 wheels — default GR00T video backend to pyav
+RUN sed -i 's/video_backend: str = "torchcodec"/video_backend: str = "pyav"/g' \
+    /workspace/Isaac-GR00T/gr00t/data/dataset/lerobot_episode_loader.py
 RUN pip install --no-cache-dir "tensorrt-cu13>=10.15.1.29" || \
     echo "WARNING: tensorrt-cu13 unavailable, ONNX-TRT export may not work"
 RUN pip install --no-cache-dir onnxruntime-gpu --extra-index-url \
