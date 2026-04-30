@@ -40,12 +40,14 @@ RUN pip install --no-cache-dir \
     jsonlines wandb onnx>=1.20.0 \
     opencv-python-headless av "huggingface-hub[cli]<1.0"
 # torchcodec: pip wheel on x86_64, build from source on aarch64 (no prebuilt wheels)
-RUN pip install --no-cache-dir torchcodec==0.10.0a0 2>/dev/null || \
+# v0.5.0 is the last release compatible with torch 2.7 (NGC 25.04 ships 2.7.0a0)
+RUN pip install --no-cache-dir torchcodec==0.5.0 2>/dev/null || \
     ( apt-get update && apt-get install -y --no-install-recommends \
         libavfilter-dev libswresample-dev && \
       rm -rf /var/lib/apt/lists/* && \
       pip install --no-cache-dir pybind11 && \
-      git clone --depth 1 https://github.com/meta-pytorch/torchcodec.git /tmp/torchcodec && \
+      git clone --depth 1 --branch v0.5.0 \
+        https://github.com/meta-pytorch/torchcodec.git /tmp/torchcodec && \
       cd /tmp/torchcodec && \
       ENABLE_CUDA=1 I_CONFIRM_THIS_IS_NOT_A_LICENSE_VIOLATION=1 \
         pip install --no-cache-dir --no-build-isolation . && \
