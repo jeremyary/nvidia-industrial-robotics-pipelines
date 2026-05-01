@@ -25,6 +25,14 @@ SINGLE_MANIFEST="${MANIFEST_DIR}/fine-tune.yaml"
 
 log() { echo "=== $(date '+%H:%M:%S') $* ==="; }
 
+check_multi_node() {
+    local ready_gpu_nodes
+    ready_gpu_nodes=$(oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.nvidia\.com/gpu}{"\t"}{.spec.taints[*].key}{"\n"}{end}' \
+        | grep -v 'unreachable\|not-ready\|unschedulable' \
+        | awk -F'\t' '$2+0 >= 4 {n++} END {print n+0}')
+    echo "${ready_gpu_nodes}"
+}
+
 wait_for_pod() {
     local label="$1"
     local job_name="$2"
@@ -151,6 +159,14 @@ EOF
 run_distributed_trial() {
     local trial="$1" gpus_per_node="$2" batch="$3" steps="$4" lr="$5" skip_export="$6"
     local total_gpus=$((gpus_per_node * 2))
+
+    local available_nodes
+    available_nodes=$(check_multi_node)
+    if [[ "${available_nodes}" -lt 2 ]]; then
+        log "SKIP Trial ${trial}: need 2 GPU nodes, only ${available_nodes} available"
+        echo -e "${trial}\t2\t${total_gpus}\t${batch}\t${steps}\t${lr}\tSKIPPED\tSKIPPED" >> "${RESULTS_FILE}"
+        return 0
+    fi
 
     log "Trial ${trial}: 2 nodes x ${gpus_per_node} GPUs = ${total_gpus} total, batch=${batch}, steps=${steps}, lr=${lr}"
 
