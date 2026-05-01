@@ -262,6 +262,8 @@ spec:
               value: /tmp/.triton
             - name: NCCL_DEBUG
               value: INFO
+            - name: NCCL_IB_DISABLE
+              value: "1"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -353,6 +355,8 @@ spec:
               value: /tmp/.triton
             - name: NCCL_DEBUG
               value: INFO
+            - name: NCCL_IB_DISABLE
+              value: "1"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
