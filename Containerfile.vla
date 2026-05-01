@@ -49,7 +49,8 @@ RUN pip install --no-cache-dir torchcodec==0.5.0 2>/dev/null || \
       git clone --depth 1 --branch v0.5.0 \
         https://github.com/meta-pytorch/torchcodec.git /tmp/torchcodec && \
       cd /tmp/torchcodec && \
-      pip install --no-cache-dir --no-build-isolation . && \
+      I_CONFIRM_THIS_IS_NOT_A_LICENSE_VIOLATION=1 \
+        pip install --no-cache-dir --no-build-isolation . && \
       rm -rf /tmp/torchcodec )
 RUN pip install --no-cache-dir "tensorrt-cu13>=10.15.1.29" || \
     echo "WARNING: tensorrt-cu13 unavailable, ONNX-TRT export may not work"
