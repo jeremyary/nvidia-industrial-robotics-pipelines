@@ -264,6 +264,8 @@ spec:
               value: INFO
             - name: NCCL_IB_DISABLE
               value: "1"
+            - name: NCCL_NET
+              value: Socket
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -357,6 +359,8 @@ spec:
               value: INFO
             - name: NCCL_IB_DISABLE
               value: "1"
+            - name: NCCL_NET
+              value: Socket
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
