@@ -1,0 +1,247 @@
+# This project was developed with assistance from AI tools.
+# Multi-node VLA fine-tuning: headless Service + 2 Jobs for 8-GPU distributed training.
+# Uses torchrun c10d rendezvous — rank assignment is automatic.
+# Bare K8s alternative to PyTorchJob on clusters without training-operator.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vla-dist
+  namespace: wbc-training
+  labels:
+    pipeline.wbc/component: vla
+    pipeline.wbc/phase: fine-tune-distributed
+spec:
+  clusterIP: None
+  selector:
+    pipeline.wbc/component: vla
+    pipeline.wbc/phase: fine-tune-distributed
+  ports:
+    - name: rdzv
+      port: 29500
+      targetPort: 29500
+    - name: nccl
+      port: 29400
+      targetPort: 29400
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vla-fine-tune-node-0
+  namespace: wbc-training
+  labels:
+    pipeline.wbc/component: vla
+    pipeline.wbc/phase: fine-tune-distributed
+    pipeline.wbc/role: master
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 14400
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        pipeline.wbc/component: vla
+        pipeline.wbc/phase: fine-tune-distributed
+        pipeline.wbc/role: master
+    spec:
+      hostname: node-0
+      subdomain: vla-dist
+      restartPolicy: Never
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  pipeline.wbc/phase: fine-tune-distributed
+              topologyKey: kubernetes.io/hostname
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Gi
+      containers:
+        - name: fine-tune
+          image: quay.io/jary/wbc-vla:v1-arm64
+          imagePullPolicy: Always
+          command:
+            - python
+            - -m
+            - wbc_pipeline.vla.fine_tune_distributed
+            - --num-gpus
+            - "4"
+            - --num-nodes
+            - "2"
+            - --rdzv-endpoint
+            - "node-0.vla-dist.wbc-training.svc.cluster.local:29500"
+            - --rank-zero-only
+            - "true"
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: NODE_RANK
+              value: "0"
+            - name: S3_ENDPOINT
+              value: "http://minio.wbc-training.svc.cluster.local:9000"
+            - name: S3_BUCKET
+              value: "wbc-training"
+            - name: VLA_S3_MODEL_PREFIX
+              value: "vla-finetune/base-model"
+            - name: VLA_S3_DATASET_PREFIX
+              value: "vla-finetune/dataset"
+            - name: VLA_S3_CHECKPOINT_PREFIX
+              value: "vla-finetune"
+            - name: VLA_NUM_GPUS
+              value: "4"
+            - name: VLA_NUM_NODES
+              value: "2"
+            - name: VLA_GLOBAL_BATCH_SIZE
+              value: "512"
+            - name: VLA_MAX_STEPS
+              value: "2000"
+            - name: VLA_LEARNING_RATE
+              value: "2.8e-4"
+            - name: HOME
+              value: /tmp
+            - name: TRITON_CACHE_DIR
+              value: /tmp/.triton
+            - name: NCCL_DEBUG
+              value: INFO
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+          envFrom:
+            - secretRef:
+                name: hf-credentials
+          resources:
+            requests:
+              cpu: "14"
+              memory: 64Gi
+              nvidia.com/gpu: "4"
+            limits:
+              memory: 150Gi
+              nvidia.com/gpu: "4"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vla-fine-tune-node-1
+  namespace: wbc-training
+  labels:
+    pipeline.wbc/component: vla
+    pipeline.wbc/phase: fine-tune-distributed
+    pipeline.wbc/role: worker
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 14400
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        pipeline.wbc/component: vla
+        pipeline.wbc/phase: fine-tune-distributed
+        pipeline.wbc/role: worker
+    spec:
+      hostname: node-1
+      subdomain: vla-dist
+      restartPolicy: Never
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  pipeline.wbc/phase: fine-tune-distributed
+              topologyKey: kubernetes.io/hostname
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Gi
+      containers:
+        - name: fine-tune
+          image: quay.io/jary/wbc-vla:v1-arm64
+          imagePullPolicy: Always
+          command:
+            - python
+            - -m
+            - wbc_pipeline.vla.fine_tune_distributed
+            - --num-gpus
+            - "4"
+            - --num-nodes
+            - "2"
+            - --rdzv-endpoint
+            - "node-0.vla-dist.wbc-training.svc.cluster.local:29500"
+            - --rank-zero-only
+            - "false"
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: NODE_RANK
+              value: "1"
+            - name: S3_ENDPOINT
+              value: "http://minio.wbc-training.svc.cluster.local:9000"
+            - name: S3_BUCKET
+              value: "wbc-training"
+            - name: VLA_S3_MODEL_PREFIX
+              value: "vla-finetune/base-model"
+            - name: VLA_S3_DATASET_PREFIX
+              value: "vla-finetune/dataset"
+            - name: VLA_S3_CHECKPOINT_PREFIX
+              value: "vla-finetune"
+            - name: VLA_NUM_GPUS
+              value: "4"
+            - name: VLA_NUM_NODES
+              value: "2"
+            - name: VLA_GLOBAL_BATCH_SIZE
+              value: "512"
+            - name: VLA_MAX_STEPS
+              value: "2000"
+            - name: VLA_LEARNING_RATE
+              value: "2.8e-4"
+            - name: HOME
+              value: /tmp
+            - name: TRITON_CACHE_DIR
+              value: /tmp/.triton
+            - name: NCCL_DEBUG
+              value: INFO
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+          envFrom:
+            - secretRef:
+                name: hf-credentials
+          resources:
+            requests:
+              cpu: "14"
+              memory: 64Gi
+              nvidia.com/gpu: "4"
+            limits:
+              memory: 150Gi
+              nvidia.com/gpu: "4"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm

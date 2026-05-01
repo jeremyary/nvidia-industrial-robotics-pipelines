@@ -18,6 +18,7 @@ MODEL_REGISTRY_DB_NAME ?= wbc_model_registry
         sonic-pipeline-compile vla-pipeline-compile \
         pipeline-deploy \
         vla-job-data-prep vla-job-fine-tune vla-job-validate vla-job-run \
+        vla-job-fine-tune-distributed vla-trials \
         lint test
 
 # ── Container ────────────────────────────────────────────────────────
@@ -149,6 +150,20 @@ vla-job-validate:
 
 vla-job-run: vla-job-data-prep vla-job-fine-tune vla-job-validate
 	@echo "VLA pipeline complete (bare K8s Jobs)."
+
+# ── Distributed training (multi-node, 8 GPUs) ────────────────────────
+vla-job-fine-tune-distributed:
+	oc delete job vla-fine-tune-node-0 vla-fine-tune-node-1 -n $(NAMESPACE) --ignore-not-found
+	oc delete svc vla-dist -n $(NAMESPACE) --ignore-not-found
+	oc apply -f deploy/jobs/vla/fine-tune-distributed.yaml
+	@echo "Waiting for distributed training pods..."
+	@while [ -z "$$(oc get pods -l pipeline.wbc/phase=fine-tune-distributed -n $(NAMESPACE) -o name 2>/dev/null)" ]; do sleep 2; done
+	@while [ "$$(oc get pods -l job-name=vla-fine-tune-node-0 -n $(NAMESPACE) -o jsonpath='{.items[0].status.phase}')" = "Pending" ]; do sleep 3; done
+	oc logs -f job/vla-fine-tune-node-0 -n $(NAMESPACE) || true
+	oc wait --for=condition=complete job/vla-fine-tune-node-0 job/vla-fine-tune-node-1 -n $(NAMESPACE) --timeout=14400s
+
+vla-trials:
+	bash deploy/jobs/vla/run-trials.sh
 
 # ── Development ──────────────────────────────────────────────────────
 lint:
