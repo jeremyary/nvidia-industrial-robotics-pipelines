@@ -407,18 +407,21 @@ fi
 log "VLA Scaling Trials — GB200 cluster (2 nodes x 4 GPUs, 189GB VRAM each)"
 echo ""
 
+# Helper: skip trials already recorded in results file
+trial_done() { grep -q "^${1}[[:space:]]" "${RESULTS_FILE}" 2>/dev/null; }
+
 # ── Phase 1: Throughput benchmarks (200 steps, no ONNX export) ──────────
 if [[ "${PHASE_VAL}" == "all" || "${PHASE_VAL}" == "1" ]]; then
     log "Phase 1: Throughput benchmarks"
     #         trial  gpus  batch  steps  lr     skip_export
-    run_single_node_trial  T1  4  64    200  1e-4   true
-    run_single_node_trial  T2  4  256   200  1e-4   true
-    run_single_node_trial  T3  4  512   200  1e-4   true
+    trial_done T1 || run_single_node_trial  T1  4  64    200  1e-4   true
+    trial_done T2 || run_single_node_trial  T2  4  256   200  1e-4   true
+    trial_done T3 || run_single_node_trial  T3  4  512   200  1e-4   true
     #              trial  gpus/node  batch  steps  lr     skip_export
-    run_distributed_trial  T4  4  256   200  1e-4   true
-    run_distributed_trial  T5  4  512   200  1e-4   true
-    run_distributed_trial  T6  4  1024  200  1e-4   true
-    run_distributed_trial  T7  4  2048  200  1e-4   true
+    trial_done T4 || run_distributed_trial  T4  4  256   200  1e-4   true
+    trial_done T5 || run_distributed_trial  T5  4  512   200  1e-4   true
+    trial_done T6 || run_distributed_trial  T6  4  1024  200  1e-4   true
+    trial_done T7 || run_distributed_trial  T7  4  2048  200  1e-4   true
     echo ""
     log "Phase 1 complete. Results in ${RESULTS_FILE}"
 fi
@@ -427,12 +430,12 @@ fi
 if [[ "${PHASE_VAL}" == "all" || "${PHASE_VAL}" == "2" ]]; then
     log "Phase 2: Convergence runs"
     #         trial  gpus  batch  steps  lr       skip_export
-    run_single_node_trial  C1  4  64    2000   1e-4     false
+    trial_done C1 || run_single_node_trial  C1  4  64    2000   1e-4     false
     #              trial  gpus/node  batch  steps  lr       skip_export
-    run_distributed_trial  C2  4  128   2000   1.4e-4   false
-    run_distributed_trial  C3  4  512   5000   2.8e-4   false
-    run_distributed_trial  C4  4  1024  5000   4e-4     false
-    run_distributed_trial  C5  4  512   10000  2.8e-4   false
+    trial_done C2 || run_distributed_trial  C2  4  128   2000   1.4e-4   false
+    trial_done C3 || run_distributed_trial  C3  4  512   5000   2.8e-4   false
+    trial_done C4 || run_distributed_trial  C4  4  1024  5000   4e-4     false
+    trial_done C5 || run_distributed_trial  C5  4  512   10000  2.8e-4   false
     echo ""
     log "Phase 2 complete. Results in ${RESULTS_FILE}"
 fi
